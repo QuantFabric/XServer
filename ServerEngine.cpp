@@ -3,6 +3,7 @@
 extern Utils::Logger *gLogger;
 
 std::unordered_map<std::string, Message::TLoginResponse> ServerEngine::m_UserPermissionMap;
+std::unordered_map<std::string, Message::TAppStatus> ServerEngine::m_AppStatusMap;
 
 ServerEngine::ServerEngine()
 {
@@ -72,16 +73,38 @@ void ServerEngine::HandlePackMessage(const Message::PackMessage &msg)
         HandleCommand(msg);
         break;
     case Message::EEventLog:
+        HandleEventLog(msg);
+        break;
     case Message::EAccountFund:
+        HandleAccountFund(msg);
+        break;
     case Message::EAccountPosition:
+        HandleAccountPosition(msg);
+        break;
     case Message::EOrderStatus:
+        HandleOrderStatus(msg);
+        break;
     case Message::EOrderRequest:
+        HandleOrderRequest(msg);
+        break;
     case Message::EActionRequest:
+        HandleActionRequest(msg);
+        break;
     case Message::ERiskReport:
+        HandleRiskReport(msg);
+        break;
     case Message::EColoStatus:
+        HandleColoStatus(msg);
+        break;
     case Message::EAppStatus:
+        HandleAppStatus(msg);
+        break;
     case Message::EFutureMarketData:
+        HandleFutureMarketData(msg);
+        break;
     case Message::EStockMarketData:
+        HandleStockMarketData(msg);
+        break;
     default:
         char buffer[128] = {0};
         sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
@@ -196,20 +219,340 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
     // Handle UserPermission
     if(Message::ECommandType::EUPDATE_USERPERMISSION == msg.Command.CmdType)
     {
-         // Update UserPermission Table
+        // Update UserPermission Table
         UpdateUserPermissionTable(msg);
-        char errorString[512] = {0};
+        char errorString[1024] = {0};
         sprintf(errorString, "ServerEngine::HandleCommand Update UserPermission Table:%s", msg.Command.Command);
         Utils::gLogger->Log->debug(errorString);
     }
+    // forward to XWatcher
+    else if(Message::ECommandType::EUPDATE_RISK_LIMIT == msg.Command.CmdType ||
+            Message::ECommandType::EUPDATE_RISK_ACCOUNT_LOCKED == msg.Command.CmdType)
+    {
+        for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+        {
+            std::string Colo = it->second.Colo;
+            if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
+            {
+                m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+                char errorString[512] = {0};
+                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
+                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
+                Utils::gLogger->Log->debug(errorString);
+            }
+        }
+    }
+    // forward to XWatcher
+    else if(Message::ECommandType::EKILL_APP == msg.Command.CmdType || Message::ECommandType::ESTART_APP == msg.Command.CmdType)
+    {
+        for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+        {
+            std::string Colo = it->second.Colo;
+            if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
+            {
+                m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+                char errorString[512] = {0};
+                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
+                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
+                Utils::gLogger->Log->debug(errorString);
+            }
+        }
+    }
+    // forward to XWatcher
+    else if(Message::ECommandType::ETRANSFER_FUND_IN == msg.Command.CmdType 
+            || Message::ECommandType::ETRANSFER_FUND_OUT == msg.Command.CmdType
+            || Message::ECommandType::EREPAY_MARGIN_DIRECT == msg.Command.CmdType)
+    {
+        for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+        {
+            std::string Colo = it->second.Colo;
+            if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
+            {
+                m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+                char errorString[512] = {0};
+                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
+                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
+                Utils::gLogger->Log->debug(errorString);
+            }
+        }
+    }
 }
 
+void ServerEngine::HandleEventLog(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_EventgLogHistoryQueue.push_back(msg);
+    }
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleEventLog Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleAccountFund(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_AccountFundHistoryQueue.push_back(msg);
+    }
+    std::string Account = msg.AccountFund.Account;
+    m_LastAccountFundMap[Account] = msg;
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ACCOUNTFUND) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleAccountFund Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleAccountPosition(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_AccountPositionHistoryQueue.push_back(msg);
+    }
+    std::string Account = msg.AccountPosition.Account;
+    std::string Ticker = msg.AccountPosition.Ticker;
+    std::string Key = Account + ":" + Ticker;
+    m_LastAccountPostionMap[Key] = msg;
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if(Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ACCOUNTPOSITION) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleAccountPosition Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleOrderStatus(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_OrderStatusHistoryQueue.push_back(msg);
+    }
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ORDERSTATUS) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleOrderStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleOrderRequest(const Message::PackMessage &msg)
+{
+    // forward to XWatcher
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); it++)
+    {
+        std::string Colo = it->second.Colo;
+        if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
+            Utils::gLogger->Log->info("ServerEngine::HandleOrderRequest send Order Request to connection:{} Colo:{} Account:{}", 
+                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+        }
+    }
+}
+
+void ServerEngine::HandleActionRequest(const Message::PackMessage &msg)
+{
+    // forward to XWatcher
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); it++)
+    {
+        std::string Colo = it->second.Colo;
+        if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
+            Utils::gLogger->Log->info("ServerEngine::HandleActionRequest send Action Request to connection:{} Colo:{} Account:{}", 
+                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+        }
+    }
+}
+
+void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_RiskReportHistoryQueue.push_back(msg);
+    }
+    switch (msg.RiskReport.ReportType)
+    {
+        case Message::ERiskReportType::ERISK_TICKER_CANCELLED:
+        {
+            std::string Product = msg.RiskReport.Product;
+            std::string Ticker = msg.RiskReport.Ticker;
+            std::string Key = Product + ":" + Ticker;
+            m_LastTickerCancelRiskReportMap[Key] = msg;
+        }
+        break;
+        case Message::ERiskReportType::ERISK_ACCOUNT_LOCKED:
+        {
+            std::string Account = msg.RiskReport.Account;
+            m_LastLockedAccountRiskReportMap[Account] = msg;
+        }
+        break;
+        case Message::ERiskReportType::ERISK_LIMIT:
+        {
+            std::string RiskID = msg.RiskReport.RiskID;
+            m_LastRiskLimitRiskReportMap[RiskID] = msg;
+        }
+        break;
+        default:
+            Utils::gLogger->Log->info("ServerEngine::HandleRiskReport unkown ReportType:{}", msg.RiskReport.ReportType);
+            break;
+    }
+
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleRiskReport Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleColoStatus(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_ColoStatusHistoryQueue.push_back(msg);
+    }
+    std::string Colo = msg.ColoStatus.Colo;
+    m_LastColoStatusMap[Colo] = msg;
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_COLOSTATUS) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleColoStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleAppStatus(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_AppStatusHistoryQueue.push_back(msg);
+    }
+    std::string Colo = msg.AppStatus.Colo;
+    std::string AppName = msg.AppStatus.AppName;
+    std::string Account = msg.AppStatus.Account;
+    std::string Key = Colo + ":" + AppName + ":" + Account;
+    m_LastAppStatusMap[Key] = msg;
+    m_AppStatusMap[Key] = msg.AppStatus;
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_APPSTATUS) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleAppStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleFutureMarketData(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_FutureMarketDataHistoryQueue.push_back(msg);
+    }
+    // update last Future Market Data
+    if(msg.FutureMarketData.Tick > -1)
+    {
+        m_LastFutureMarketDataMap[msg.FutureMarketData.Ticker] = msg;
+    }
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_FUTUREMARKET) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleFutureMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_StockMarketDataHistoryQueue.push_back(msg);
+    }
+    // update last Stock Market Data
+    if(msg.StockMarketData.Tick > -1)
+    {
+        m_LastStockMarketDataMap[msg.StockMarketData.Ticker] = msg;
+    }
+    // forward to monitor
+    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_STOCKMARKET) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleStockMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
 
 void ServerEngine::UpdateUserPermissionTable(const Message::PackMessage &msg)
 {
     std::string sql, op;
     Message::TLoginResponse rsp;
-    Utils::gLogger->Log->info("XRiskEngine::ParseUpdateUserPermissionCommand start size:{}", m_UserPermissionMap.size());
+    Utils::gLogger->Log->info("XRiskEngine::ParseUpdateUserPermissionCommand start size:{} {}", m_UserPermissionMap.size(), msg.Command.Command);
     if(ParseUpdateUserPermissionCommand(msg.Command.Command, sql, op, rsp))
     {
         std::string errorString;
@@ -294,7 +637,6 @@ bool ServerEngine::ParseUpdateUserPermissionCommand(const std::string& cmd, std:
         auto it = m_UserPermissionMap.find(UserName);
         if(m_UserPermissionMap.end() == it)
         {
-
             sprintf(buffer, "INSERT INTO UserPermissionTable(UserName,PassWord,Role,Plugins,Messages,UpdateTime) VALUES ('%s', '%s', '%s', '%s', '%s', '%s');",
                     UserName.c_str(), PassWord.c_str(), Role.c_str(), Plugins.c_str(), Messages.c_str(), CurrentTime.c_str());
             op = "INSERT";
@@ -316,13 +658,13 @@ bool ServerEngine::ParseUpdateUserPermissionCommand(const std::string& cmd, std:
         }
         sql = buffer;
         Utils::gLogger->Log->info("ServerEngine::ParseUpdateUserPermissionCommand successed, UserName:{} Role:{} Plugins:{} Messages:{} MapSize:{}",
-                                  UserName.c_str(), Role.c_str(), Plugins.c_str(), Messages.c_str(), m_UserPermissionMap.size());
+                                  UserName, Role, Plugins, Messages, m_UserPermissionMap.size());
     }
     else
     {
         ret = false;
         sprintf(rsp.ErrorMsg, "invalid command: %s", cmd.c_str());
-        Utils::gLogger->Log->warn("ServerEngine::ParseUpdateUserPermissionCommand invalid command, {}", cmd.c_str());
+        Utils::gLogger->Log->warn("ServerEngine::ParseUpdateUserPermissionCommand invalid command, {}", cmd);
     }
 
     return ret;

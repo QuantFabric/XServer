@@ -101,7 +101,7 @@ En_HP_HandleResult __stdcall HPPackServer::OnSend(HP_Server pSender, HP_CONNID d
 
 En_HP_HandleResult __stdcall HPPackServer::OnReceive(HP_Server pSender, HP_CONNID dwConnID, const BYTE *pData, int iLength)
 {
-       TCHAR szAddress[50];
+    TCHAR szAddress[50];
     int iAddressLen = sizeof(szAddress) / sizeof(TCHAR);
     USHORT usPort;
     ::HP_Server_GetRemoteAddress(pSender, dwConnID, szAddress, &iAddressLen, &usPort);
