@@ -22,6 +22,15 @@ void ServerEngine::LoadConfig(const char* yml)
         m_CloseTime = Utils::getTimeStampMs(m_XServerConfig.CloseTime.c_str());
         m_AppCheckTime = Utils::getTimeStampMs(m_XServerConfig.AppCheckTime.c_str());
 
+        if(Utils::endWith(m_XServerConfig.BinPath, ".bin"))
+        {
+            m_SnapShotPath = m_XServerConfig.BinPath;
+        }
+        else
+        {
+            m_SnapShotPath = m_XServerConfig.BinPath + "/" + Utils::getCurrentNumberDay() + ".bin";
+        }
+
         bool ret = m_UserDBManager->LoadDataBase(m_XServerConfig.UserDBPath, errorBuffer);
         if(!ret)
         {
@@ -49,6 +58,25 @@ void ServerEngine::Run()
 {
     RegisterServer(m_XServerConfig.ServerIP.c_str(), m_XServerConfig.Port);
 
+    // Load Snap Shot
+    if(m_XServerConfig.SnapShot)
+    {
+        std::vector<Message::PackMessage> items;
+        if(Utils::SnapShotHelper<Message::PackMessage>::LoadSnapShot(m_SnapShotPath, items))
+        {
+            Utils::gLogger->Log->info("ServerEngine::LoadSnapShot {} successed, SnapShot number:{}", m_SnapShotPath.c_str(), items.size());
+            for (size_t i = 0; i < items.size(); i++)
+            {
+                memcpy(&m_PackMessage, &items.at(i), sizeof(m_PackMessage));
+                HandleSnapShotMessage(m_PackMessage);
+            }
+        }
+        else
+        {
+            Utils::gLogger->Log->warn("ServerEngine::LoadSnapShot {} failed", m_SnapShotPath.c_str());
+        }
+    }
+
     Utils::gLogger->Log->info("ServerEngine::Run start to handle message");
     while (true)
     {
@@ -56,8 +84,16 @@ void ServerEngine::Run()
         memset(&m_PackMessage, 0, sizeof(m_PackMessage));
         while(m_HPPackServer->m_PackMessageQueue.pop(m_PackMessage))
         {
+            if(m_XServerConfig.SnapShot && IsTrading())
+            {
+                int retCode = Utils::SnapShotHelper<Message::PackMessage>::WriteData(m_SnapShotPath, m_PackMessage);
+                Utils::gLogger->Log->debug("ServerEngine::SnapShotHelper::WriteData result:{}", retCode);
+            }
             HandlePackMessage(m_PackMessage);
         }
+        // History Data Replay 
+        HistoryDataReplay();
+
     }
 }
 
@@ -546,6 +582,458 @@ void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
             Utils::gLogger->Log->debug(errorString);
         }
     }
+}
+
+void ServerEngine::HandleSnapShotMessage(const Message::PackMessage &msg)
+{
+    unsigned int type = msg.MessageType;
+    switch (type)
+    {
+    case Message::EMessageType::EEventLog:
+        m_EventgLogHistoryQueue.push_back(msg);
+        break;
+    case Message::EMessageType::EAccountFund:
+    {
+        std::string Account = msg.AccountFund.Account;
+        m_LastAccountFundMap[Account] = msg;
+        m_AccountFundHistoryQueue.push_back(msg);
+    }
+    break;
+    case Message::EMessageType::EAccountPosition:
+    {
+        std::string Account = msg.AccountPosition.Account;
+        std::string Ticker = msg.AccountPosition.Ticker;
+        std::string Key = Account + ":" + Ticker;
+        m_LastAccountPostionMap[Key] = msg;
+        m_AccountPositionHistoryQueue.push_back(msg);
+    }
+    break;
+    case Message::EMessageType::EOrderStatus:
+        m_OrderStatusHistoryQueue.push_back(msg);
+        break;
+    case Message::EMessageType::ERiskReport:
+    {
+        m_RiskReportHistoryQueue.push_back(msg);
+        switch (msg.RiskReport.ReportType)
+        {
+            case Message::ERiskReportType::ERISK_TICKER_CANCELLED:
+            {
+                std::string Product = msg.RiskReport.Product;
+                std::string Ticker = msg.RiskReport.Ticker;
+                std::string Key = Product + ":" + Ticker;
+                m_LastTickerCancelRiskReportMap[Key] = msg;
+            }
+            break;
+            case Message::ERiskReportType::ERISK_ACCOUNT_LOCKED:
+            {
+                std::string Account = msg.RiskReport.Account;
+                m_LastLockedAccountRiskReportMap[Account] = msg;
+            }
+            break;
+            case Message::ERiskReportType::ERISK_LIMIT:
+            {
+                std::string RiskID = msg.RiskReport.RiskID;
+                m_LastRiskLimitRiskReportMap[RiskID] = msg;
+            }
+            break;
+        }
+        break;
+    }
+    case Message::EMessageType::EColoStatus:
+    {
+        std::string Colo = msg.ColoStatus.Colo;
+        m_LastColoStatusMap[Colo] = msg;
+        m_ColoStatusHistoryQueue.push_back(msg);
+        break;
+    }
+    case Message::EMessageType::EAppStatus:
+    {
+        std::string Colo = msg.AppStatus.Colo;
+        std::string AppName = msg.AppStatus.AppName;
+        std::string Account = msg.AppStatus.Account;
+        std::string Key = Colo + ":" + AppName + ":" + Account;
+        m_LastAppStatusMap[Key] = msg;
+        m_AppStatusMap[Key] = msg.AppStatus;
+        m_AppStatusHistoryQueue.push_back(msg);
+        break;
+    }
+    case Message::EMessageType::EFutureMarketData:
+    {
+        m_FutureMarketDataHistoryQueue.push_back(msg);
+        m_LastFutureMarketDataMap[msg.FutureMarketData.Ticker] = msg;
+        break;
+    }
+    case Message::EMessageType::EStockMarketData:
+    {
+        m_StockMarketDataHistoryQueue.push_back(msg);
+        m_LastStockMarketDataMap[msg.StockMarketData.Ticker] = msg;
+        break;
+    }
+    default:
+        char buffer[128] = {0};
+        sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
+        Utils::gLogger->Log->info("ServerEngine::HandleSnapShotMessage {}", buffer);
+        break;
+    }
+}
+
+void ServerEngine::HistoryDataReplay()
+{
+    if(m_CurrentTimeStamp % 10000 == 0)
+    {
+        char buffer[256] = {0};
+        sprintf(buffer, "ServerEngine::HistoryDataReplay FutureMarketData:%d StockMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), m_OrderStatusHistoryQueue.size(),
+                m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), m_ColoStatusHistoryQueue.size(),
+                m_AppStatusHistoryQueue.size());
+        Utils::gLogger->Log->info(buffer);
+        usleep(1000);
+    }
+    // Trading Section
+    if(IsTrading())
+    {
+        LastHistoryDataReplay();
+        return;
+    }
+    if(m_CurrentTimeStamp % 5000 == 0 && m_HPPackServer->m_newConnections.size() > 0)
+    {
+        char buffer[512] = {0};
+        sprintf(buffer, "ServerEngine::HistoryDataReplay History Data Replay Start FutureMarketData:%d StockMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), m_OrderStatusHistoryQueue.size(),
+                m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), m_ColoStatusHistoryQueue.size(),
+                m_AppStatusHistoryQueue.size());
+        Utils::gLogger->Log->info(buffer);
+        unsigned int start = Utils::getTimeMs();
+        long EventgLogCount = 0;
+        long OrderStatusCount = 0;
+        long FutureMarketDataCount = 0;
+        long StockMarketDataCount = 0;
+        long RiskReportCount = 0;
+        while (true)
+        {
+            if(0 == m_HPPackServer->m_newConnections.size())
+                break;
+            // EventLog Replay
+            for (int i = EventgLogCount; i < m_EventgLogHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_EventgLogHistoryQueue.at(i)),
+                                             sizeof(m_EventgLogHistoryQueue.at(i)));
+                    }
+                }
+                EventgLogCount++;
+                usleep(2*1000);
+                if(EventgLogCount % 100 == 0)
+                    break;
+            }
+            // OrderStatus Replay
+            for (int i = OrderStatusCount; i < m_OrderStatusHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_ORDERSTATUS) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_OrderStatusHistoryQueue.at(i)),
+                                             sizeof(m_OrderStatusHistoryQueue.at(i)));
+                    }
+                }
+                OrderStatusCount++;
+                usleep(2*1000);
+                if(OrderStatusCount % 100 == 0)
+                    break;
+            }
+
+            // Future Market Data Replay
+            for (int i = FutureMarketDataCount; FutureMarketDataCount < m_FutureMarketDataHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_FUTUREMARKET) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_FutureMarketDataHistoryQueue.at(i)),
+                                             sizeof(m_FutureMarketDataHistoryQueue.at(i)));
+                    }
+                }
+                FutureMarketDataCount++;
+                usleep(2*1000);
+                if(FutureMarketDataCount % 100 == 0)
+                    break;
+            }
+
+            // Stock Market Data Replay
+            for (int i = StockMarketDataCount; StockMarketDataCount < m_StockMarketDataHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_STOCKMARKET) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_StockMarketDataHistoryQueue.at(i)),
+                                             sizeof(m_StockMarketDataHistoryQueue.at(i)));
+                    }
+                }
+                StockMarketDataCount++;
+                usleep(2*1000);
+                if(StockMarketDataCount % 100 == 0)
+                    break;
+            }
+
+            // RiskReport Data Replay
+            for (int i = RiskReportCount; RiskReportCount < m_RiskReportHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_RiskReportHistoryQueue.at(i)),
+                                             sizeof(m_RiskReportHistoryQueue.at(i)));
+                    }
+                }
+                RiskReportCount++;
+                usleep(2*1000);
+                if(RiskReportCount % 100 == 0)
+                    break;
+            }
+
+            if((0 == FutureMarketDataCount % 1000 || 0 == StockMarketDataCount % 1000) && 
+                (FutureMarketDataCount <= m_FutureMarketDataHistoryQueue.size() || StockMarketDataCount <= m_StockMarketDataHistoryQueue.size()))
+            {
+                Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay FutureMarketData:{} StockMarketData:{} EventgLog:{} OrderStatus:{} RiskReport:{}",
+                                          FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, RiskReportCount);
+            }
+            // History Data Replay done
+            if(FutureMarketDataCount >= m_FutureMarketDataHistoryQueue.size() && EventgLogCount >= m_EventgLogHistoryQueue.size()
+                    && StockMarketDataCount >= m_StockMarketDataHistoryQueue.size() && OrderStatusCount >= m_OrderStatusHistoryQueue.size()
+                    && RiskReportCount >= m_RiskReportHistoryQueue.size())
+            {
+                for (auto it1 = m_HPPackServer->m_newConnections.begin(); it1 != m_HPPackServer->m_newConnections.end(); ++it1)
+                {
+                    std::string Messages = it1->second.Messages;
+                    // Account Fund Data Replay
+                    if (Message::EClientType::EXMONITOR == it1->second.ClientType && Messages.find(MESSAGE_ACCOUNTFUND) != std::string::npos)
+                    {
+                        for (auto it2 = m_LastAccountFundMap.begin(); it2 != m_LastAccountFundMap.end(); it2++)
+                        {
+                            m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char *)&(it2->second), sizeof(it2->second));
+                        }
+                    }
+                    // Account Position Data Replay
+                    if (Message::EClientType::EXMONITOR == it1->second.ClientType && Messages.find(MESSAGE_ACCOUNTPOSITION) != std::string::npos)
+                    {
+                        
+                        for (auto it2 = m_LastAccountPostionMap.begin(); it2 != m_LastAccountPostionMap.end(); it2++)
+                        {
+                            m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char *)&(it2->second), sizeof(it2->second));
+                        }
+                    }
+                    // // ColoStatus Data Replay
+                    if (Message::EClientType::EXMONITOR == it1->second.ClientType && Messages.find(MESSAGE_COLOSTATUS) != std::string::npos)
+                    {
+                        
+                        for (auto it2 = m_LastColoStatusMap.begin(); it2 != m_LastColoStatusMap.end(); it2++)
+                        {
+                            m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char *)&(it2->second), sizeof(it2->second));
+                        }
+                    }
+                    // // AppStatus Data Replay
+                    if (Message::EClientType::EXMONITOR == it1->second.ClientType && Messages.find(MESSAGE_APPSTATUS) != std::string::npos)
+                    {
+                        
+                        for (auto it2 = m_LastAppStatusMap.begin(); it2 != m_LastAppStatusMap.end(); it2++)
+                        {
+                            m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char *)&(it2->second), sizeof(it2->second));
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        unsigned int end = Utils::getTimeMs();
+        double elapsed = (end - start) / 1000.0;
+        Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay End, connections:{}, Replay FutureMarketData:{} StockMarketData:{} EventgLog:{} OrderStatus:{}, elapsed:{}s",
+                                  m_HPPackServer->m_newConnections.size(), FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, elapsed);
+        // clear
+        std::mutex mtx;
+        mtx.lock();
+        m_HPPackServer->m_newConnections.clear();
+        mtx.unlock();
+    }
+}
+
+void ServerEngine::LastHistoryDataReplay()
+{
+    // EventLog Replay
+    for (int i = 0; i < m_EventgLogHistoryQueue.size(); i++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_EventgLogHistoryQueue.at(i)), sizeof(m_EventgLogHistoryQueue.at(i)));
+            }
+        }
+    }
+    
+    // AccountFund Replay
+    for (auto it1 = m_LastAccountFundMap.begin(); it1 != m_LastAccountFundMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_ACCOUNTFUND) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+    // AccountPosition Replay
+    for (auto it1 = m_LastAccountPostionMap.begin(); it1 != m_LastAccountPostionMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_ACCOUNTPOSITION) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+    // Market Data Replay
+    for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+    {
+        std::string Messages = it2->second.Messages;
+        if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_FUTUREMARKET) != std::string::npos)
+        {
+            for(auto it3 = m_LastFutureMarketDataMap.begin(); it3 != m_LastFutureMarketDataMap.end(); it3++)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&it3->second, sizeof(it3->second));
+            }
+        }
+
+        if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_STOCKMARKET) != std::string::npos)
+        {
+            for(auto it3 = m_LastStockMarketDataMap.begin(); it3 != m_LastStockMarketDataMap.end(); it3++)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&it3->second, sizeof(it3->second));
+            }
+        }
+    }
+    // OrderStatus Replay
+    for (auto it1 = m_OrderStatusHistoryQueue.begin(); it1 != m_OrderStatusHistoryQueue.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_ORDERSTATUS) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(*it1), sizeof(*it1));
+            }
+        }
+    }
+    // RiskReport
+    for (auto it1 = m_LastTickerCancelRiskReportMap.begin(); it1 != m_LastTickerCancelRiskReportMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+    for (auto it1 = m_LastLockedAccountRiskReportMap.begin(); it1 != m_LastLockedAccountRiskReportMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+    for (auto it1 = m_LastRiskLimitRiskReportMap.begin(); it1 != m_LastRiskLimitRiskReportMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+
+    // ColoStatus Replay
+    for (auto it1 = m_LastColoStatusMap.begin(); it1 != m_LastColoStatusMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_COLOSTATUS) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+
+    // AppStatus Replay
+    for (auto it1 = m_LastAppStatusMap.begin(); it1 != m_LastAppStatusMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_APPSTATUS) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+    std::mutex mtx;
+    mtx.lock();
+    m_HPPackServer->m_newConnections.clear();
+    mtx.unlock();
 }
 
 void ServerEngine::UpdateUserPermissionTable(const Message::PackMessage &msg)

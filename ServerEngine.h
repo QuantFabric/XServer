@@ -9,15 +9,16 @@
 #include "HPPackServer.h"
 #include "YMLConfig.hpp"
 #include "UserDBManager.hpp"
+#include "SnapShotHelper.hpp"
 
 class ServerEngine
 {
 public:
     explicit ServerEngine();
     void LoadConfig(const char* yml);
-    void RegisterServer(const char *ip, unsigned int port);
     void Run();
 protected:
+    void RegisterServer(const char *ip, unsigned int port);
     void HandlePackMessage(const Message::PackMessage &msg);
     void HandleLoginRequest(const Message::PackMessage &msg);
     void HandleCommand(const Message::PackMessage &msg);
@@ -32,6 +33,10 @@ protected:
     void HandleAppStatus(const Message::PackMessage &msg);
     void HandleFutureMarketData(const Message::PackMessage &msg);
     void HandleStockMarketData(const Message::PackMessage &msg);
+
+    void HandleSnapShotMessage(const Message::PackMessage &msg);
+    void HistoryDataReplay();
+    void LastHistoryDataReplay();
 
     void UpdateUserPermissionTable(const Message::PackMessage &msg);
     bool ParseUpdateUserPermissionCommand(const std::string& cmd, std::string& sql, std::string& op, Message::TLoginResponse& rsp);
@@ -70,6 +75,7 @@ private:
     std::unordered_map<std::string, Message::PackMessage> m_LastAppStatusMap;// Colo + ":" + AppName + ":" + Account, AppStatus
     std::unordered_map<std::string, Message::PackMessage> m_LastFutureMarketDataMap;// Ticker, FutureMarketData
     std::unordered_map<std::string, Message::PackMessage> m_LastStockMarketDataMap;// Ticker, FutureMarketData
+    std::string m_SnapShotPath;
 };
 
 #endif // SERVERENGINE_H
