@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include "HPPackServer.h"
 #include "YMLConfig.hpp"
+#include "UserDBManager.hpp"
 
 class ServerEngine
 {
@@ -16,8 +17,15 @@ public:
     void LoadConfig(const char* yml);
     void RegisterServer(const char *ip, unsigned int port);
     void Run();
-private:
+protected:
     void HandlePackMessage(const Message::PackMessage &msg);
+    void HandleLoginRequest(const Message::PackMessage &msg);
+    void HandleCommand(const Message::PackMessage &msg);
+
+    void UpdateUserPermissionTable(const Message::PackMessage &msg);
+    bool ParseUpdateUserPermissionCommand(const std::string& cmd, std::string& sql, std::string& op, Message::TLoginResponse& rsp);
+    static int sqlite3_callback_UserPermission(void *data, int argc, char **argv, char **azColName);
+    bool QueryUserPermission();
 
     bool IsTrading()const;
     void CheckTrading();
@@ -30,6 +38,8 @@ private:
     int m_OpenTime;
     int m_CloseTime;
     int m_AppCheckTime;
+    static std::unordered_map<std::string, Message::TLoginResponse> m_UserPermissionMap;
+    UserDBManager* m_UserDBManager;
 };
 
 #endif // SERVERENGINE_H

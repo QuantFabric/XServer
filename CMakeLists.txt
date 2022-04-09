@@ -4,7 +4,7 @@ PROJECT(XServer)
 set(CMAKE_CXX_FLAGS "-fPIC")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-SET(AppVersion 0.1.0)
+SET(AppVersion 0.2.0)
 SET(XServer_Version ${PROJECT_NAME}_${AppVersion})
 
 # 默认输出debug版
@@ -31,4 +31,4 @@ set(SOURCES main.cpp
             ${CMAKE_SOURCE_DIR}/../Utils/Logger.cpp)
 add_executable(${XServer_Version} ${SOURCES})
 
-target_link_libraries(${XServer_Version} spdlog pthread hpsocket4c yaml-cpp)                      
+target_link_libraries(${XServer_Version} spdlog pthread hpsocket4c yaml-cpp sqlite3)                      
