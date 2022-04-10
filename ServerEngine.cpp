@@ -1256,10 +1256,15 @@ void ServerEngine::UpdateAppStatusTable()
         m_UserDBManager->UpdateAppStatusTable("DELETE FROM AppStatusTable;", "DELETE", &ServerEngine::sqlite3_callback_AppStatus, errorString);
         for(auto it = m_AppStatusMap.begin(); it != m_AppStatusMap.end(); it++)
         {
-            char sql[256] = {0};
-            sprintf(sql, "INSERT INTO AppStatusTable(Colo, AppName, Account, PID, Status, UpdateTime) VALUES ('%s', '%s', '%s', '%d', '%s', '%s');", 
+            std::string Status = it->second.Status;
+            // 收盘后进程状态为NoStart的进程App不进行存储
+            if(Status != "NoStart")
+            {
+                char sql[256] = {0};
+                sprintf(sql, "INSERT INTO AppStatusTable(Colo, AppName, Account, PID, Status, UpdateTime) VALUES ('%s', '%s', '%s', '%d', '%s', '%s');", 
                     it->second.Colo, it->second.AppName, it->second.Account, it->second.PID, it->second.Status, Utils::getCurrentTimeUs());
-            m_UserDBManager->UpdateAppStatusTable(sql, "INSERT", &ServerEngine::sqlite3_callback_AppStatus, errorString);
+                m_UserDBManager->UpdateAppStatusTable(sql, "INSERT", &ServerEngine::sqlite3_callback_AppStatus, errorString);
+            }
         }
         ok = true;
     }
