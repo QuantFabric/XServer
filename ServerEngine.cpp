@@ -40,6 +40,8 @@ void ServerEngine::LoadConfig(const char* yml)
         {
             // Load Permission
             m_UserDBManager->QueryUserPermission(&ServerEngine::sqlite3_callback_UserPermission, errorBuffer);
+            // Load AppStatus
+            m_UserDBManager->QueryAppStatus(&ServerEngine::sqlite3_callback_AppStatus, errorBuffer);
         }
     }
     else
@@ -93,7 +95,10 @@ void ServerEngine::Run()
         }
         // History Data Replay 
         HistoryDataReplay();
-
+        // Check App Status when 09:20:00
+        CheckAppStatus();
+        // Update AppStatus to SQLite when 15:20:00
+        UpdateAppStatusTable();
     }
 }
 
@@ -1239,6 +1244,99 @@ bool ServerEngine::QueryUserPermission()
         }
     }
     return ret;
+}
+
+void ServerEngine::UpdateAppStatusTable()
+{
+    static bool ok = false;
+    if(!ok && m_CurrentTimeStamp/1000 == (m_CloseTime - 1000 * 60 * 5) / 1000)
+    {
+        Utils::gLogger->Log->info("ServerEngine::UpdateAppStatusTable, App:{}", m_AppStatusMap.size());
+        std::string errorString;
+        m_UserDBManager->UpdateAppStatusTable("DELETE FROM AppStatusTable;", "DELETE", &ServerEngine::sqlite3_callback_AppStatus, errorString);
+        for(auto it = m_AppStatusMap.begin(); it != m_AppStatusMap.end(); it++)
+        {
+            char sql[256] = {0};
+            sprintf(sql, "INSERT INTO AppStatusTable(Colo, AppName, Account, PID, Status, UpdateTime) VALUES ('%s', '%s', '%s', '%d', '%s', '%s');", 
+                    it->second.Colo, it->second.AppName, it->second.Account, it->second.PID, it->second.Status, Utils::getCurrentTimeUs());
+            m_UserDBManager->UpdateAppStatusTable(sql, "INSERT", &ServerEngine::sqlite3_callback_AppStatus, errorString);
+        }
+        ok = true;
+    }
+}
+
+int ServerEngine::sqlite3_callback_AppStatus(void *data, int argc, char **argv, char **azColName)
+{
+    for(int i = 0; i < argc; i++)
+    {
+        Utils::gLogger->Log->info("ServerEngine::sqlite3_callback_AppStatus, {} {} = {}", (char*)data, azColName[i], argv[i]);
+        std::string colName = azColName[i];
+        std::string value = argv[i];
+        static std::string Colo;
+        static std::string AppName;
+        static std::string Account;
+        static std::string PID;
+        static std::string Status;
+
+        if(Utils::equalWith(colName, "Colo"))
+        {
+            Colo = value;
+        }
+        if(Utils::equalWith(colName, "AppName"))
+        {
+            AppName = value;
+        }
+        if(Utils::equalWith(colName, "Account"))
+        {
+            Account = value;
+        }
+        if(Utils::equalWith(colName, "PID"))
+        {
+            PID = value;
+        }
+        if(Utils::equalWith(colName, "Status"))
+        {
+            Status = value;
+            std::mutex mtx;
+            mtx.lock();
+            std::string Key = Colo + ":" + AppName + ":" + Account;
+            Message::TAppStatus& AppStatus = m_AppStatusMap[Key];
+            strncpy(AppStatus.Colo, Colo.c_str(), sizeof(AppStatus.Account));
+            strncpy(AppStatus.AppName, AppName.c_str(), sizeof(AppStatus.AppName));
+            strncpy(AppStatus.Account, Account.c_str(), sizeof(AppStatus.Account));
+            AppStatus.PID = atoi(PID.c_str());
+            strncpy(AppStatus.Status, "NoStart", sizeof(AppStatus.Status));
+            mtx.unlock();
+        }
+    }
+    return 0;
+}
+
+void ServerEngine::CheckAppStatus()
+{
+    static bool ok = false;
+    if(!ok && m_CurrentTimeStamp/1000 == m_AppCheckTime/1000)
+    {
+        Utils::gLogger->Log->info("ServerEngine::CheckAppStatus, App:{}", m_AppStatusMap.size());
+        for(auto it = m_AppStatusMap.begin(); it != m_AppStatusMap.end(); it++)
+        {
+            if(Utils::equalWith(it->second.Status, "NoStart"))
+            {
+                char errorString[256] = {0};
+                sprintf(errorString, "Colo: %s AppName: %s Account: %s NoStart", it->second.Colo, it->second.AppName, it->second.Account);
+                Message::PackMessage message;
+                memset(&message, 0, sizeof(message));
+                message.MessageType = Message::EMessageType::EEventLog;
+                message.EventLog.Level = Message::EEventLogLevel::EWARNING;
+                strncpy(message.EventLog.App, it->second.AppName, sizeof(message.EventLog.App));
+                strncpy(message.EventLog.Event, errorString, sizeof(message.EventLog.Event));
+                strncpy(message.EventLog.UpdateTime, Utils::getCurrentTimeUs(), sizeof(message.EventLog.UpdateTime));
+                HandleEventLog(message);
+                Utils::gLogger->Log->warn(errorString);
+            }
+        }
+        ok = true;
+    }
 }
 
 bool ServerEngine::IsTrading()const

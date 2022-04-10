@@ -52,6 +52,37 @@ public:
         }
         return ret;
     }
+
+    bool UpdateAppStatusTable(const std::string& sql, const std::string& op, sqlite3_callback cb, std::string& errorString)
+    {
+        errorString.clear();
+        char errorBuffer[256] = {0};
+        bool ret = m_DBManager->Execute(sql, cb, op.c_str(), errorString);
+        if(!ret)
+        {
+            sprintf(errorBuffer, "ErrorMsg: %s, SQL: %s", errorString.c_str(), sql.c_str());
+            Utils::gLogger->Log->warn("UserDBManager::UpdateAppStatusTable failed, ErrorMsg:{} sql:{}",
+                                      errorString.c_str(), sql.c_str());
+        }
+        else
+        {
+            sprintf(errorBuffer, "SQL: %s", sql.c_str());
+            Utils::gLogger->Log->info("UserDBManager::UpdateAppStatusTable successed, sql:{}", sql.c_str());
+        }
+        errorString = errorBuffer;
+        return ret;
+    }
+
+    bool QueryAppStatus(sqlite3_callback cb, std::string& errorString)
+    {
+        std::string SQL_SELECT_APP_STATUS = "SELECT * FROM AppStatusTable;";
+        bool ret = m_DBManager->Execute(SQL_SELECT_APP_STATUS, cb, "SELECT", errorString);
+        if(!ret)
+        {
+            Utils::gLogger->Log->warn("UserDBManager::QueryAppStatus failed, {}", errorString.c_str());
+        }
+        return ret;
+    }
 private:
     UserDBManager() {}
     UserDBManager &operator=(const UserDBManager&);

@@ -43,6 +43,10 @@ protected:
     static int sqlite3_callback_UserPermission(void *data, int argc, char **argv, char **azColName);
     bool QueryUserPermission();
 
+    void UpdateAppStatusTable();
+    static int sqlite3_callback_AppStatus(void *data, int argc, char **argv, char **azColName);
+    void CheckAppStatus();
+
     bool IsTrading()const;
     void CheckTrading();
 private:
