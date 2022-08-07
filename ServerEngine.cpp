@@ -146,6 +146,9 @@ void ServerEngine::HandlePackMessage(const Message::PackMessage &msg)
     case Message::EStockMarketData:
         HandleStockMarketData(msg);
         break;
+    case Message::ESpotMarketData:
+        HandleSpotMarketData(msg);
+        break;
     default:
         char buffer[128] = {0};
         sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
@@ -549,10 +552,18 @@ void ServerEngine::HandleFutureMarketData(const Message::PackMessage &msg)
         m_LastFutureMarketDataMap[msg.FutureMarketData.Ticker] = msg;
     }
     // forward to monitor
-    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
     {
         std::string Messages = it->second.Messages;
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_FUTUREMARKET) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleFutureMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+        else if (Message::EClientType::EXDATAPLAYER == it->second.ClientType)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
             char errorString[512] = {0};
@@ -575,7 +586,7 @@ void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
         m_LastStockMarketDataMap[msg.StockMarketData.Ticker] = msg;
     }
     // forward to monitor
-    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
     {
         std::string Messages = it->second.Messages;
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_STOCKMARKET) != std::string::npos)
@@ -583,6 +594,48 @@ void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
             char errorString[512] = {0};
             sprintf(errorString, "ServerEngine::HandleStockMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+    }
+}
+
+void ServerEngine::HandleSpotMarketData(const Message::PackMessage &msg)
+{
+    if(IsTrading())
+    {
+        m_SpotMarketDataHistoryQueue.push_back(msg);
+    }
+    // update last Stock Market Data
+    if(msg.SpotMarketData.Tick > -1)
+    {
+        m_LastSpotMarketDataMap[msg.SpotMarketData.Ticker] = msg;
+    }
+    // forward to monitor
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    {
+        std::string Messages = it->second.Messages;
+        if(Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_SPOTMARKET) != std::string::npos)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+        else if(Message::EClientType::EXWATCHER == it->second.ClientType)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
+                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
+            Utils::gLogger->Log->debug(errorString);
+        }
+        else if (Message::EClientType::EXDATAPLAYER == it->second.ClientType)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
+            char errorString[512] = {0};
+            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
                         it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
             Utils::gLogger->Log->debug(errorString);
         }
@@ -674,6 +727,12 @@ void ServerEngine::HandleSnapShotMessage(const Message::PackMessage &msg)
         m_LastStockMarketDataMap[msg.StockMarketData.Ticker] = msg;
         break;
     }
+    case Message::EMessageType::ESpotMarketData:
+    {
+        m_SpotMarketDataHistoryQueue.push_back(msg);
+        m_LastSpotMarketDataMap[msg.SpotMarketData.Ticker] = msg;
+        break;
+    }
     default:
         char buffer[128] = {0};
         sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
@@ -687,10 +746,10 @@ void ServerEngine::HistoryDataReplay()
     if(m_CurrentTimeStamp % 10000 == 0)
     {
         char buffer[256] = {0};
-        sprintf(buffer, "ServerEngine::HistoryDataReplay FutureMarketData:%d StockMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
-                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), m_OrderStatusHistoryQueue.size(),
-                m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), m_ColoStatusHistoryQueue.size(),
-                m_AppStatusHistoryQueue.size());
+        sprintf(buffer, "ServerEngine::HistoryDataReplay FutureMarketData:%d StockMarketData:%d SpotMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_SpotMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), 
+                m_OrderStatusHistoryQueue.size(), m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), 
+                m_ColoStatusHistoryQueue.size(), m_AppStatusHistoryQueue.size());
         Utils::gLogger->Log->info(buffer);
         usleep(1000);
     }
@@ -703,16 +762,17 @@ void ServerEngine::HistoryDataReplay()
     if(m_CurrentTimeStamp % 5000 == 0 && m_HPPackServer->m_newConnections.size() > 0)
     {
         char buffer[512] = {0};
-        sprintf(buffer, "ServerEngine::HistoryDataReplay History Data Replay Start FutureMarketData:%d StockMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
-                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), m_OrderStatusHistoryQueue.size(),
-                m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), m_ColoStatusHistoryQueue.size(),
-                m_AppStatusHistoryQueue.size());
+        sprintf(buffer, "ServerEngine::HistoryDataReplay History Data Replay Start FutureMarketData:%d StockMarketData:%d SpotMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+                m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_SpotMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), 
+                m_OrderStatusHistoryQueue.size(), m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), 
+                m_ColoStatusHistoryQueue.size(), m_AppStatusHistoryQueue.size());
         Utils::gLogger->Log->info(buffer);
         unsigned int start = Utils::getTimeMs();
         long EventgLogCount = 0;
         long OrderStatusCount = 0;
         long FutureMarketDataCount = 0;
         long StockMarketDataCount = 0;
+        long SpotMarketDataCount = 0;
         long RiskReportCount = 0;
         while (true)
         {
@@ -800,6 +860,27 @@ void ServerEngine::HistoryDataReplay()
                     break;
             }
 
+            // Spot Market Data Replay
+            for (int i = SpotMarketDataCount; SpotMarketDataCount < m_SpotMarketDataHistoryQueue.size(); i++)
+            {
+                if(m_HPPackServer->m_newConnections.size() == 0)
+                    break;
+
+                for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+                {
+                    std::string Messages = it2->second.Messages;
+                    if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_SPOTMARKET) != std::string::npos)
+                    {
+                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_SpotMarketDataHistoryQueue.at(i)),
+                                             sizeof(m_SpotMarketDataHistoryQueue.at(i)));
+                    }
+                }
+                SpotMarketDataCount++;
+                usleep(2*1000);
+                if(SpotMarketDataCount % 100 == 0)
+                    break;
+            }
+
             // RiskReport Data Replay
             for (int i = RiskReportCount; RiskReportCount < m_RiskReportHistoryQueue.size(); i++)
             {
@@ -821,16 +902,17 @@ void ServerEngine::HistoryDataReplay()
                     break;
             }
 
-            if((0 == FutureMarketDataCount % 1000 || 0 == StockMarketDataCount % 1000) && 
-                (FutureMarketDataCount <= m_FutureMarketDataHistoryQueue.size() || StockMarketDataCount <= m_StockMarketDataHistoryQueue.size()))
+            if((0 == FutureMarketDataCount % 1000 || 0 == StockMarketDataCount % 1000 || 0 == SpotMarketDataCount % 1000) && 
+                (FutureMarketDataCount <= m_FutureMarketDataHistoryQueue.size() || StockMarketDataCount <= m_StockMarketDataHistoryQueue.size() 
+                || SpotMarketDataCount <= m_SpotMarketDataHistoryQueue.size()))
             {
-                Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay FutureMarketData:{} StockMarketData:{} EventgLog:{} OrderStatus:{} RiskReport:{}",
-                                          FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, RiskReportCount);
+                Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay FutureMarketData:{} StockMarketData:{} SpotMarketData:{} EventgLog:{} OrderStatus:{} RiskReport:{}",
+                                          FutureMarketDataCount, StockMarketDataCount, SpotMarketDataCount, EventgLogCount, OrderStatusCount, RiskReportCount);
             }
             // History Data Replay done
             if(FutureMarketDataCount >= m_FutureMarketDataHistoryQueue.size() && EventgLogCount >= m_EventgLogHistoryQueue.size()
                     && StockMarketDataCount >= m_StockMarketDataHistoryQueue.size() && OrderStatusCount >= m_OrderStatusHistoryQueue.size()
-                    && RiskReportCount >= m_RiskReportHistoryQueue.size())
+                    && RiskReportCount >= m_RiskReportHistoryQueue.size() && SpotMarketDataCount >= m_SpotMarketDataHistoryQueue.size())
             {
                 for (auto it1 = m_HPPackServer->m_newConnections.begin(); it1 != m_HPPackServer->m_newConnections.end(); ++it1)
                 {
@@ -1333,7 +1415,9 @@ void ServerEngine::CheckAppStatus()
                 memset(&message, 0, sizeof(message));
                 message.MessageType = Message::EMessageType::EEventLog;
                 message.EventLog.Level = Message::EEventLogLevel::EWARNING;
+                strncpy(message.EventLog.Colo, it->second.Colo, sizeof(message.EventLog.Colo));
                 strncpy(message.EventLog.App, it->second.AppName, sizeof(message.EventLog.App));
+                strncpy(message.EventLog.Account, it->second.Account, sizeof(message.EventLog.Account));
                 strncpy(message.EventLog.Event, errorString, sizeof(message.EventLog.Event));
                 strncpy(message.EventLog.UpdateTime, Utils::getCurrentTimeUs(), sizeof(message.EventLog.UpdateTime));
                 HandleEventLog(message);

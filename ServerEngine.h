@@ -33,6 +33,7 @@ protected:
     void HandleAppStatus(const Message::PackMessage &msg);
     void HandleFutureMarketData(const Message::PackMessage &msg);
     void HandleStockMarketData(const Message::PackMessage &msg);
+    void HandleSpotMarketData(const Message::PackMessage &msg);
 
     void HandleSnapShotMessage(const Message::PackMessage &msg);
     void HistoryDataReplay();
@@ -63,6 +64,7 @@ private:
     static std::unordered_map<std::string, Message::TAppStatus> m_AppStatusMap;
     std::vector<Message::PackMessage> m_FutureMarketDataHistoryQueue;
     std::vector<Message::PackMessage> m_StockMarketDataHistoryQueue;
+    std::vector<Message::PackMessage> m_SpotMarketDataHistoryQueue;
     std::vector<Message::PackMessage> m_EventgLogHistoryQueue;
     std::vector<Message::PackMessage> m_OrderStatusHistoryQueue;
     std::vector<Message::PackMessage> m_RiskReportHistoryQueue;
@@ -78,7 +80,8 @@ private:
     std::unordered_map<std::string, Message::PackMessage> m_LastColoStatusMap; // Colo, ColoStatus
     std::unordered_map<std::string, Message::PackMessage> m_LastAppStatusMap;// Colo + ":" + AppName + ":" + Account, AppStatus
     std::unordered_map<std::string, Message::PackMessage> m_LastFutureMarketDataMap;// Ticker, FutureMarketData
-    std::unordered_map<std::string, Message::PackMessage> m_LastStockMarketDataMap;// Ticker, FutureMarketData
+    std::unordered_map<std::string, Message::PackMessage> m_LastStockMarketDataMap;// Ticker, StockMarketData
+    std::unordered_map<std::string, Message::PackMessage> m_LastSpotMarketDataMap;// Ticker, SpotMarketData
     std::string m_SnapShotPath;
 };
 
