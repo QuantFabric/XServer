@@ -5,6 +5,7 @@
 #include <vector>
 #include <mutex>
 #include <stdlib.h>
+#include <thread>
 #include <unordered_map>
 #include "HPPackServer.h"
 #include "YMLConfig.hpp"
@@ -19,6 +20,7 @@ public:
     void Run();
 protected:
     void RegisterServer(const char *ip, unsigned int port);
+    void WorkFunc();
     void HandlePackMessage(const Message::PackMessage &msg);
     void HandleLoginRequest(const Message::PackMessage &msg);
     void HandleCommand(const Message::PackMessage &msg);
@@ -59,7 +61,13 @@ private:
     int m_OpenTime;
     int m_CloseTime;
     int m_AppCheckTime;
-    static std::unordered_map<std::string, Message::TLoginResponse> m_UserPermissionMap;
+    int m_AppStatusStoreTime;
+    std::thread* m_WorkThread;
+    typedef phmap::parallel_flat_hash_map<std::string, Message::TLoginResponse, phmap::priv::hash_default_hash<std::string>,
+                                     phmap::priv::hash_default_eq<std::string>,
+                                     std::allocator<std::pair<const std::string, Message::TLoginResponse>>, 8, std::shared_mutex>
+    UserPermissionMapT;
+    static UserPermissionMapT m_UserPermissionMap;
     UserDBManager* m_UserDBManager;
     static std::unordered_map<std::string, Message::TAppStatus> m_AppStatusMap;
     std::vector<Message::PackMessage> m_FutureMarketDataHistoryQueue;

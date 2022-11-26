@@ -2,9 +2,9 @@
 
 extern Utils::Logger *gLogger;
 
-std::unordered_map<HP_CONNID, Connection> HPPackServer::m_sConnections;
-std::unordered_map<HP_CONNID, Connection> HPPackServer::m_newConnections;
-Utils::RingBuffer<Message::PackMessage> HPPackServer::m_PackMessageQueue(1 << 10);
+HPPackServer::ConnectionMapT HPPackServer::m_sConnections;
+HPPackServer::ConnectionMapT HPPackServer::m_newConnections;
+Utils::LockFreeQueue<Message::PackMessage> HPPackServer::m_PackMessageQueue(1 << 15);
 
 HPPackServer::HPPackServer(const char *ip, unsigned int port)
 {
@@ -113,8 +113,6 @@ En_HP_HandleResult __stdcall HPPackServer::OnReceive(HP_Server pSender, HP_CONNI
     // LoginRequest
     if (Message::EMessageType::ELoginRequest == message.MessageType)
     {
-        std::mutex mtx;
-        mtx.lock();
         auto it = m_sConnections.find(dwConnID);
         if (it != m_sConnections.end())
         {
@@ -128,9 +126,8 @@ En_HP_HandleResult __stdcall HPPackServer::OnReceive(HP_Server pSender, HP_CONNI
                     szAddress, usPort, message.LoginRequest.Account, message.LoginRequest.PassWord);
             Utils::gLogger->Log->info(errorString);
         }
-        mtx.unlock();
     }
-    m_PackMessageQueue.push(message);
+    while(!m_PackMessageQueue.Push(message));
     return HR_OK;
 }
 
@@ -141,8 +138,6 @@ En_HP_HandleResult __stdcall HPPackServer::OnClose(HP_Server pSender, HP_CONNID 
     USHORT usPort;
     ::HP_Server_GetRemoteAddress(pSender, dwConnID, szAddress, &iAddressLen, &usPort);
 
-    std::mutex mtx;
-    mtx.lock();
     auto it = m_sConnections.find(dwConnID);
     if (it != m_sConnections.end())
     {
@@ -153,7 +148,6 @@ En_HP_HandleResult __stdcall HPPackServer::OnClose(HP_Server pSender, HP_CONNID 
     {
         m_newConnections.erase(dwConnID);
     }
-    mtx.unlock();
     char errorString[512] = {0};
     sprintf(errorString, "HPPackServer::OnClose have an connection dwConnID:%d from %s:%d closed",  dwConnID, szAddress, usPort);
     Utils::gLogger->Log->warn(errorString);

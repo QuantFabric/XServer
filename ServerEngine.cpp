@@ -2,12 +2,13 @@
 
 extern Utils::Logger *gLogger;
 
-std::unordered_map<std::string, Message::TLoginResponse> ServerEngine::m_UserPermissionMap;
+ServerEngine::UserPermissionMapT ServerEngine::m_UserPermissionMap;
 std::unordered_map<std::string, Message::TAppStatus> ServerEngine::m_AppStatusMap;
 
 ServerEngine::ServerEngine()
 {
     m_HPPackServer = NULL;
+    m_WorkThread = NULL;
     m_UserDBManager = Utils::Singleton<UserDBManager>::GetInstance();
 }
 
@@ -21,6 +22,7 @@ void ServerEngine::LoadConfig(const char* yml)
         m_OpenTime = Utils::getTimeStampMs(m_XServerConfig.OpenTime.c_str());
         m_CloseTime = Utils::getTimeStampMs(m_XServerConfig.CloseTime.c_str());
         m_AppCheckTime = Utils::getTimeStampMs(m_XServerConfig.AppCheckTime.c_str());
+        m_AppStatusStoreTime = Utils::getTimeStampMs(m_XServerConfig.AppStatusStoreTime.c_str());
 
         if(Utils::endWith(m_XServerConfig.BinPath, ".bin"))
         {
@@ -59,7 +61,13 @@ void ServerEngine::RegisterServer(const char *ip, unsigned int port)
 void ServerEngine::Run()
 {
     RegisterServer(m_XServerConfig.ServerIP.c_str(), m_XServerConfig.Port);
+    sleep(1);
+    m_WorkThread = new std::thread(&ServerEngine::WorkFunc, this);
+    m_WorkThread->join();
+}
 
+void ServerEngine::WorkFunc()
+{
     // Load Snap Shot
     if(m_XServerConfig.SnapShot)
     {
@@ -84,7 +92,7 @@ void ServerEngine::Run()
     {
         CheckTrading();
         memset(&m_PackMessage, 0, sizeof(m_PackMessage));
-        while(m_HPPackServer->m_PackMessageQueue.pop(m_PackMessage))
+        while(m_HPPackServer->m_PackMessageQueue.Pop(m_PackMessage))
         {
             if(m_XServerConfig.SnapShot && IsTrading())
             {
@@ -776,6 +784,25 @@ void ServerEngine::HistoryDataReplay()
         long RiskReportCount = 0;
         while (true)
         {
+            static std::vector<Message::PackMessage> bufferQueue;
+            while(m_HPPackServer->m_PackMessageQueue.Pop(m_PackMessage))
+            {
+                if(m_PackMessage.MessageType == Message::EMessageType::ELoginRequest)
+                {
+                    HandleLoginRequest(m_PackMessage);
+                }
+                else
+                {
+                    bufferQueue.push_back(m_PackMessage);
+                }
+            }
+            // 非交易时段，可能造成消息乱序
+            for(size_t i = 0; i < bufferQueue.size(); i++)
+            {
+                while(!m_HPPackServer->m_PackMessageQueue.Push(bufferQueue.at(i)));
+            }
+            bufferQueue.clear();
+
             if(0 == m_HPPackServer->m_newConnections.size())
                 break;
             // EventLog Replay
@@ -961,10 +988,7 @@ void ServerEngine::HistoryDataReplay()
         Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay End, connections:{}, Replay FutureMarketData:{} StockMarketData:{} EventgLog:{} OrderStatus:{}, elapsed:{}s",
                                   m_HPPackServer->m_newConnections.size(), FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, elapsed);
         // clear
-        std::mutex mtx;
-        mtx.lock();
         m_HPPackServer->m_newConnections.clear();
-        mtx.unlock();
     }
 }
 
@@ -1117,10 +1141,7 @@ void ServerEngine::LastHistoryDataReplay()
             }
         }
     }
-    std::mutex mtx;
-    mtx.lock();
     m_HPPackServer->m_newConnections.clear();
-    mtx.unlock();
 }
 
 void ServerEngine::UpdateUserPermissionTable(const Message::PackMessage &msg)
@@ -1282,8 +1303,6 @@ int ServerEngine::sqlite3_callback_UserPermission(void *data, int argc, char **a
         if(Utils::equalWith(colName, "UpdateTime"))
         {
             std::string UpdateTime = value;
-            std::mutex mtx;
-            mtx.lock();
             Message::TLoginResponse& rsp = m_UserPermissionMap[UserName];
             strncpy(rsp.Account, UserName.c_str(), sizeof(rsp.Account));
             strncpy(rsp.PassWord, PassWord.c_str(), sizeof(rsp.PassWord));
@@ -1292,7 +1311,6 @@ int ServerEngine::sqlite3_callback_UserPermission(void *data, int argc, char **a
             strncpy(rsp.Messages, Messages.c_str(), sizeof(rsp.Messages));
             rsp.Operation = Message::EPermissionOperation::EUSER_UPDATE;
             strncpy(rsp.UpdateTime, UpdateTime.c_str(), sizeof(rsp.UpdateTime));
-            mtx.unlock();
         }
     }
     return 0;
@@ -1331,7 +1349,7 @@ bool ServerEngine::QueryUserPermission()
 void ServerEngine::UpdateAppStatusTable()
 {
     static bool ok = false;
-    if(!ok && m_CurrentTimeStamp/1000 == (m_CloseTime - 1000 * 60 * 5) / 1000)
+    if(!ok && m_CurrentTimeStamp / 1000 == m_AppStatusStoreTime / 1000)
     {
         Utils::gLogger->Log->info("ServerEngine::UpdateAppStatusTable, App:{}", m_AppStatusMap.size());
         std::string errorString;
@@ -1384,8 +1402,6 @@ int ServerEngine::sqlite3_callback_AppStatus(void *data, int argc, char **argv, 
         if(Utils::equalWith(colName, "Status"))
         {
             Status = value;
-            std::mutex mtx;
-            mtx.lock();
             std::string Key = Colo + ":" + AppName + ":" + Account;
             Message::TAppStatus& AppStatus = m_AppStatusMap[Key];
             strncpy(AppStatus.Colo, Colo.c_str(), sizeof(AppStatus.Account));
@@ -1393,7 +1409,6 @@ int ServerEngine::sqlite3_callback_AppStatus(void *data, int argc, char **argv, 
             strncpy(AppStatus.Account, Account.c_str(), sizeof(AppStatus.Account));
             AppStatus.PID = atoi(PID.c_str());
             strncpy(AppStatus.Status, "NoStart", sizeof(AppStatus.Status));
-            mtx.unlock();
         }
     }
     return 0;
