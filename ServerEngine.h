@@ -63,11 +63,7 @@ private:
     int m_AppCheckTime;
     int m_AppStatusStoreTime;
     std::thread* m_WorkThread;
-    typedef phmap::parallel_flat_hash_map<std::string, Message::TLoginResponse, phmap::priv::hash_default_hash<std::string>,
-                                     phmap::priv::hash_default_eq<std::string>,
-                                     std::allocator<std::pair<const std::string, Message::TLoginResponse>>, 8, std::shared_mutex>
-    UserPermissionMapT;
-    static UserPermissionMapT m_UserPermissionMap;
+    static std::unordered_map<std::string, Message::TLoginResponse> m_UserPermissionMap;
     UserDBManager* m_UserDBManager;
     static std::unordered_map<std::string, Message::TAppStatus> m_AppStatusMap;
     std::vector<Message::PackMessage> m_FutureMarketDataHistoryQueue;

@@ -2,7 +2,7 @@
 
 extern Utils::Logger *gLogger;
 
-ServerEngine::UserPermissionMapT ServerEngine::m_UserPermissionMap;
+std::unordered_map<std::string, Message::TLoginResponse> ServerEngine::m_UserPermissionMap;
 std::unordered_map<std::string, Message::TAppStatus> ServerEngine::m_AppStatusMap;
 
 ServerEngine::ServerEngine()
