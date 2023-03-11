@@ -432,6 +432,12 @@ void ServerEngine::HandleOrderRequest(const Message::PackMessage &msg)
             Utils::gLogger->Log->info("ServerEngine::HandleOrderRequest send Order Request to connection:{} Colo:{} Account:{}", 
                                         it->second.dwConnID, Colo.c_str(), it->second.Account);
         }
+        else if(Message::EClientType::EHFTRADER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
+            Utils::gLogger->Log->info("ServerEngine::HandleOrderRequest send Order Request to HFTrader connection:{} Colo:{} Account:{}", 
+                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+        }
     }
 }
 
@@ -445,6 +451,12 @@ void ServerEngine::HandleActionRequest(const Message::PackMessage &msg)
         {
             m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
             Utils::gLogger->Log->info("ServerEngine::HandleActionRequest send Action Request to connection:{} Colo:{} Account:{}", 
+                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+        }
+        else if(Message::EClientType::EHFTRADER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
+        {
+            m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
+            Utils::gLogger->Log->info("ServerEngine::HandleActionRequest send Action Request to HFTrader connection:{} Colo:{} Account:{}", 
                                         it->second.dwConnID, Colo.c_str(), it->second.Account);
         }
     }
