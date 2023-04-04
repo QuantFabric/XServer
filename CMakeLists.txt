@@ -5,7 +5,7 @@ PROJECT(XServer)
 set(CMAKE_CXX_FLAGS "-fPIC")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-SET(AppVersion 0.8)
+SET(AppVersion 0.8.0)
 SET(XServer_Version ${PROJECT_NAME}_${AppVersion})
 
 # 默认输出debug版

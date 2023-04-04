@@ -871,11 +871,6 @@ void ServerEngine::HistoryDataReplay()
                         m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_FutureMarketDataHistoryQueue.at(i)),
                                              sizeof(m_FutureMarketDataHistoryQueue.at(i)));
                     }
-                    else if (Message::EClientType::EHFTRADER == it2->second.ClientType)
-                    {
-                        m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(m_FutureMarketDataHistoryQueue.at(i)),
-                                             sizeof(m_FutureMarketDataHistoryQueue.at(i)));
-                    }
                 }
                 FutureMarketDataCount++;
                 usleep(2*1000);
