@@ -1,6 +1,5 @@
 #include "ServerEngine.h"
 
-extern Utils::Logger *gLogger;
 
 std::unordered_map<std::string, Message::TLoginResponse> ServerEngine::m_UserPermissionMap;
 std::unordered_map<std::string, Message::TAppStatus> ServerEngine::m_AppStatusMap;
@@ -14,11 +13,11 @@ ServerEngine::ServerEngine()
 
 void ServerEngine::LoadConfig(const char* yml)
 {
-    Utils::gLogger->Log->info("ServerEngine::LoadConfig {} start", yml);
+    FMTLOG(fmtlog::INF, "ServerEngine::LoadConfig {} start", yml);
     std::string errorBuffer;
     if(Utils::LoadXServerConfig(yml, m_XServerConfig, errorBuffer))
     {
-        Utils::gLogger->Log->info("ServerEngine::LoadXServerConfig {} successed", yml);
+        FMTLOG(fmtlog::INF, "ServerEngine::LoadXServerConfig {} successed", yml);
         m_OpenTime = Utils::getTimeStampMs(m_XServerConfig.OpenTime.c_str());
         m_CloseTime = Utils::getTimeStampMs(m_XServerConfig.CloseTime.c_str());
         m_AppCheckTime = Utils::getTimeStampMs(m_XServerConfig.AppCheckTime.c_str());
@@ -36,7 +35,7 @@ void ServerEngine::LoadConfig(const char* yml)
         bool ret = m_UserDBManager->LoadDataBase(m_XServerConfig.UserDBPath, errorBuffer);
         if(!ret)
         {
-            Utils::gLogger->Log->error("ServerEngine::LoadDataBase {} failed, {}", m_XServerConfig.UserDBPath.c_str(), errorBuffer.c_str());
+            FMTLOG(fmtlog::ERR, "ServerEngine::LoadDataBase {} failed, {}", m_XServerConfig.UserDBPath, errorBuffer);
         }
         else
         {
@@ -48,7 +47,7 @@ void ServerEngine::LoadConfig(const char* yml)
     }
     else
     {
-        Utils::gLogger->Log->error("ServerEngine::LoadXServerConfig {} failed, {}", yml, errorBuffer.c_str());
+        FMTLOG(fmtlog::ERR, "ServerEngine::LoadXServerConfig {} failed, {}", yml, errorBuffer);
     }
 }
 
@@ -74,7 +73,7 @@ void ServerEngine::WorkFunc()
         std::vector<Message::PackMessage> items;
         if(Utils::SnapShotHelper<Message::PackMessage>::LoadSnapShot(m_SnapShotPath, items))
         {
-            Utils::gLogger->Log->info("ServerEngine::LoadSnapShot {} successed, SnapShot number:{}", m_SnapShotPath.c_str(), items.size());
+            FMTLOG(fmtlog::INF, "ServerEngine::LoadSnapShot {} successed, SnapShot number:{}", m_SnapShotPath, items.size());
             for (size_t i = 0; i < items.size(); i++)
             {
                 memcpy(&m_PackMessage, &items.at(i), sizeof(m_PackMessage));
@@ -83,11 +82,11 @@ void ServerEngine::WorkFunc()
         }
         else
         {
-            Utils::gLogger->Log->warn("ServerEngine::LoadSnapShot {} failed", m_SnapShotPath.c_str());
+            FMTLOG(fmtlog::WRN, "ServerEngine::LoadSnapShot {} failed", m_SnapShotPath);
         }
     }
 
-    Utils::gLogger->Log->info("ServerEngine::Run start to handle message");
+    FMTLOG(fmtlog::INF, "ServerEngine::Run start to handle message");
     while (true)
     {
         CheckTrading();
@@ -97,7 +96,7 @@ void ServerEngine::WorkFunc()
             if(m_XServerConfig.SnapShot && IsTrading())
             {
                 int retCode = Utils::SnapShotHelper<Message::PackMessage>::WriteData(m_SnapShotPath, m_PackMessage);
-                Utils::gLogger->Log->debug("ServerEngine::SnapShotHelper::WriteData result:{}", retCode);
+                FMTLOG(fmtlog::DBG, "ServerEngine::SnapShotHelper::WriteData result:{}", retCode);
             }
             HandlePackMessage(m_PackMessage);
         }
@@ -158,9 +157,7 @@ void ServerEngine::HandlePackMessage(const Message::PackMessage &msg)
         HandleSpotMarketData(msg);
         break;
     default:
-        char buffer[128] = {0};
-        sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
-        Utils::gLogger->Log->warn("ServerEngine::HandlePackMessage {}", buffer);
+        FMTLOG(fmtlog::WRN, "ServerEngine::HandlePackMessage unkown message type:{:#X}", msg.MessageType);
         break;
     }
 }
@@ -207,7 +204,7 @@ void ServerEngine::HandleLoginRequest(const Message::PackMessage &msg)
                         strncpy(message.EventLog.Event, errorString, sizeof(message.EventLog.Event));
                         strncpy(message.EventLog.UpdateTime, Utils::getCurrentTimeUs(), sizeof(message.EventLog.UpdateTime));
                         m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char*)&message, sizeof(message));
-                        Utils::gLogger->Log->warn(errorString);
+                        FMTLOG(fmtlog::WRN, "{} Login Failed, PassWord Invalid:{}", Account, msg.LoginRequest.PassWord);
                     }
                     return;
                 }
@@ -244,8 +241,8 @@ void ServerEngine::HandleLoginRequest(const Message::PackMessage &msg)
                         message.MessageType = Message::EMessageType::ELoginResponse;
                         memcpy(&message.LoginResponse, &it3->second, sizeof(message.LoginResponse));
                         m_HPPackServer->SendData(it1->second.dwConnID, (const unsigned char*)&message, sizeof(message));
-                        Utils::gLogger->Log->info("ServerEngine::HandleLoginRequest UserName:{} Role:{} Plugins:{}",
-                                                  it3->second.Account, it3->second.Role, it3->second.Plugins);
+                        FMTLOG(fmtlog::INF, "ServerEngine::HandleLoginRequest UserName:{} Role:{} Plugins:{}",
+                                it3->second.Account, it3->second.Role, it3->second.Plugins);
                     }
                 }
                 break;
@@ -255,14 +252,12 @@ void ServerEngine::HandleLoginRequest(const Message::PackMessage &msg)
                 errorString = "Account or UUID not matched.";
             }
         }
-        Utils::gLogger->Log->info("ServerEngine::HandleLoginRequest new Connection, Account:{} UUID:{} newConnections:{} errorMsg:{}",
-                                  msg.LoginRequest.Account, msg.LoginRequest.UUID,
-                                  m_HPPackServer->m_newConnections.size(), errorString.c_str());
+        FMTLOG(fmtlog::INF, "ServerEngine::HandleLoginRequest new Connection, Account:{} UUID:{} newConnections:{} errorMsg:{}",
+                msg.LoginRequest.Account, msg.LoginRequest.UUID, m_HPPackServer->m_newConnections.size(), errorString);
     }
     else
     {
-        Utils::gLogger->Log->warn("ServerEngine::HandleLoginRequest UserName:{} not Found ,mapSize:{}",
-                                  Account.c_str(), m_UserPermissionMap.size());
+        FMTLOG(fmtlog::WRN, "ServerEngine::HandleLoginRequest UserName:{} not Found ,mapSize:{}", Account, m_UserPermissionMap.size());
     }
 }
 
@@ -273,9 +268,7 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
     {
         // Update UserPermission Table
         UpdateUserPermissionTable(msg);
-        char errorString[1024] = {0};
-        sprintf(errorString, "ServerEngine::HandleCommand Update UserPermission Table:%s", msg.Command.Command);
-        Utils::gLogger->Log->debug(errorString);
+        FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Update UserPermission Table:{}", msg.Command.Command);
     }
     // forward to XWatcher
     else if(Message::ECommandType::EUPDATE_RISK_LIMIT == msg.Command.CmdType ||
@@ -287,10 +280,8 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
             if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                char errorString[512] = {0};
-                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
-                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
-                Utils::gLogger->Log->debug(errorString);
+                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                        it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
     }
@@ -303,10 +294,8 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
             if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                char errorString[512] = {0};
-                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
-                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
-                Utils::gLogger->Log->debug(errorString);
+                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                        it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
     }
@@ -321,10 +310,8 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
             if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                char errorString[512] = {0};
-                sprintf(errorString, "ServerEngine::HandleCommand Send Data to Connection:%d Colo:%s, Account:%s, MessgeType:0X%X",
-                            it->second.dwConnID, Colo.c_str(), it->second.Account, msg.MessageType);
-                Utils::gLogger->Log->debug(errorString);
+                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                        it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
     }
@@ -343,10 +330,8 @@ void ServerEngine::HandleEventLog(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleEventLog Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleEventLog Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -366,10 +351,8 @@ void ServerEngine::HandleAccountFund(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ACCOUNTFUND) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleAccountFund Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleAccountFund Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -391,10 +374,8 @@ void ServerEngine::HandleAccountPosition(const Message::PackMessage &msg)
         if(Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ACCOUNTPOSITION) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleAccountPosition Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleAccountPosition Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -412,10 +393,8 @@ void ServerEngine::HandleOrderStatus(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_ORDERSTATUS) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleOrderStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleOrderStatus Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -429,14 +408,14 @@ void ServerEngine::HandleOrderRequest(const Message::PackMessage &msg)
         if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
         {
             m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
-            Utils::gLogger->Log->info("ServerEngine::HandleOrderRequest send Order Request to connection:{} Colo:{} Account:{}", 
-                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+            FMTLOG(fmtlog::INF, "ServerEngine::HandleOrderRequest send Order Request to connection:{} Colo:{} Account:{}", 
+                    it->second.dwConnID, Colo, it->second.Account);
         }
         else if(Message::EClientType::EHFTRADER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
         {
             m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
-            Utils::gLogger->Log->info("ServerEngine::HandleOrderRequest send Order Request to HFTrader connection:{} Colo:{} Account:{}", 
-                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+            FMTLOG(fmtlog::INF, "ServerEngine::HandleOrderRequest send Order Request to HFTrader connection:{} Colo:{} Account:{}", 
+                    it->second.dwConnID, Colo, it->second.Account);
         }
     }
 }
@@ -450,14 +429,14 @@ void ServerEngine::HandleActionRequest(const Message::PackMessage &msg)
         if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
         {
             m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
-            Utils::gLogger->Log->info("ServerEngine::HandleActionRequest send Action Request to connection:{} Colo:{} Account:{}", 
-                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+            FMTLOG(fmtlog::INF, "ServerEngine::HandleActionRequest send Action Request to connection:{} Colo:{} Account:{}", 
+                    it->second.dwConnID, Colo, it->second.Account);
         }
         else if(Message::EClientType::EHFTRADER == it->second.ClientType && Colo == msg.OrderRequest.Colo)
         {
             m_HPPackServer->SendData(it->second.dwConnID, reinterpret_cast<const unsigned char*>(&msg), sizeof(msg));
-            Utils::gLogger->Log->info("ServerEngine::HandleActionRequest send Action Request to HFTrader connection:{} Colo:{} Account:{}", 
-                                        it->second.dwConnID, Colo.c_str(), it->second.Account);
+            FMTLOG(fmtlog::INF, "ServerEngine::HandleActionRequest send Action Request to HFTrader connection:{} Colo:{} Account:{}", 
+                    it->second.dwConnID, Colo, it->second.Account);
         }
     }
 }
@@ -491,7 +470,7 @@ void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
         }
         break;
         default:
-            Utils::gLogger->Log->info("ServerEngine::HandleRiskReport unkown ReportType:{}", msg.RiskReport.ReportType);
+            FMTLOG(fmtlog::WRN, "ServerEngine::HandleRiskReport unkown ReportType:{}", msg.RiskReport.ReportType);
             break;
     }
 
@@ -502,10 +481,8 @@ void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleRiskReport Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleRiskReport Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -525,10 +502,8 @@ void ServerEngine::HandleColoStatus(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_COLOSTATUS) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleColoStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleColoStatus Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -552,10 +527,8 @@ void ServerEngine::HandleAppStatus(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_APPSTATUS) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleAppStatus Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleAppStatus Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -578,18 +551,14 @@ void ServerEngine::HandleFutureMarketData(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_FUTUREMARKET) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleFutureMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleFutureMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
         else if (Message::EClientType::EXDATAPLAYER == it->second.ClientType)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleFutureMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleFutureMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -612,10 +581,8 @@ void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
         if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_STOCKMARKET) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleStockMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleStockMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -638,26 +605,20 @@ void ServerEngine::HandleSpotMarketData(const Message::PackMessage &msg)
         if(Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_SPOTMARKET) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleSpotMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
         else if(Message::EClientType::EXWATCHER == it->second.ClientType)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleSpotMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
         else if (Message::EClientType::EXDATAPLAYER == it->second.ClientType)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-            char errorString[512] = {0};
-            sprintf(errorString, "ServerEngine::HandleSpotMarketData Send Data to Connection:%d successed, Account:%s, Messages:%s, MessgeType:0X%X",
-                        it->second.dwConnID, it->second.Account, Messages.c_str(), msg.MessageType);
-            Utils::gLogger->Log->debug(errorString);
+            FMTLOG(fmtlog::DBG, "ServerEngine::HandleSpotMarketData Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",
+                    it->second.dwConnID, it->second.Account, Messages, msg.MessageType);
         }
     }
 }
@@ -754,9 +715,7 @@ void ServerEngine::HandleSnapShotMessage(const Message::PackMessage &msg)
         break;
     }
     default:
-        char buffer[128] = {0};
-        sprintf(buffer, "UnKown Message type:0X%X", msg.MessageType);
-        Utils::gLogger->Log->info("ServerEngine::HandleSnapShotMessage {}", buffer);
+        FMTLOG(fmtlog::WRN, "ServerEngine::HandleSnapShotMessage UnKown Message type:{:#X}", msg.MessageType);
         break;
     }
 }
@@ -765,12 +724,11 @@ void ServerEngine::HistoryDataReplay()
 {
     if(m_CurrentTimeStamp % 10000 == 0)
     {
-        char buffer[256] = {0};
-        sprintf(buffer, "ServerEngine::HistoryDataReplay FutureMarketData:%d StockMarketData:%d SpotMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+        FMTLOG(fmtlog::INF, "ServerEngine::HistoryDataReplay FutureMarketData:{} StockMarketData:{} SpotMarketData:{} EventgLog:{} "
+                            "OrderStatus:{} AccountFund:{} AccountPosition:{} RiskReport:{} ColoStatus:{} AppStatus:{}",
                 m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_SpotMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), 
                 m_OrderStatusHistoryQueue.size(), m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), 
                 m_ColoStatusHistoryQueue.size(), m_AppStatusHistoryQueue.size());
-        Utils::gLogger->Log->info(buffer);
         usleep(1000);
     }
     // Trading Section
@@ -781,12 +739,11 @@ void ServerEngine::HistoryDataReplay()
     }
     if(m_CurrentTimeStamp % 5000 == 0 && m_HPPackServer->m_newConnections.size() > 0)
     {
-        char buffer[512] = {0};
-        sprintf(buffer, "ServerEngine::HistoryDataReplay History Data Replay Start FutureMarketData:%d StockMarketData:%d SpotMarketData:%d EventgLog:%d OrderStatus:%d AccountFund:%d AccountPosition:%d RiskReport:%d ColoStatus:%d AppStatus:%d",
+        FMTLOG(fmtlog::INF, "ServerEngine::HistoryDataReplay History Data Replay Start FutureMarketData:{} StockMarketData:{} "
+                            "SpotMarketData:{} EventgLog:{} OrderStatus:{} AccountFund:{} AccountPosition:{} RiskReport:{} ColoStatus:{} AppStatus:{}",
                 m_FutureMarketDataHistoryQueue.size(), m_StockMarketDataHistoryQueue.size(), m_SpotMarketDataHistoryQueue.size(), m_EventgLogHistoryQueue.size(), 
                 m_OrderStatusHistoryQueue.size(), m_AccountFundHistoryQueue.size(), m_AccountPositionHistoryQueue.size(), m_RiskReportHistoryQueue.size(), 
                 m_ColoStatusHistoryQueue.size(), m_AppStatusHistoryQueue.size());
-        Utils::gLogger->Log->info(buffer);
         unsigned int start = Utils::getTimeMs();
         long EventgLogCount = 0;
         long OrderStatusCount = 0;
@@ -945,8 +902,9 @@ void ServerEngine::HistoryDataReplay()
                 (FutureMarketDataCount <= m_FutureMarketDataHistoryQueue.size() || StockMarketDataCount <= m_StockMarketDataHistoryQueue.size() 
                 || SpotMarketDataCount <= m_SpotMarketDataHistoryQueue.size()))
             {
-                Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay FutureMarketData:{} StockMarketData:{} SpotMarketData:{} EventgLog:{} OrderStatus:{} RiskReport:{}",
-                                          FutureMarketDataCount, StockMarketDataCount, SpotMarketDataCount, EventgLogCount, OrderStatusCount, RiskReportCount);
+                FMTLOG(fmtlog::INF, "ServerEngine::HistoryDataReplay History Data Replay FutureMarketData:{} StockMarketData:{} "
+                                    "SpotMarketData:{} EventgLog:{} OrderStatus:{} RiskReport:{}",
+                        FutureMarketDataCount, StockMarketDataCount, SpotMarketDataCount, EventgLogCount, OrderStatusCount, RiskReportCount);
             }
             // History Data Replay done
             if(FutureMarketDataCount >= m_FutureMarketDataHistoryQueue.size() && EventgLogCount >= m_EventgLogHistoryQueue.size()
@@ -997,8 +955,9 @@ void ServerEngine::HistoryDataReplay()
         }
         unsigned int end = Utils::getTimeMs();
         double elapsed = (end - start) / 1000.0;
-        Utils::gLogger->Log->info("ServerEngine::HistoryDataReplay History Data Replay End, connections:{}, Replay FutureMarketData:{} StockMarketData:{} EventgLog:{} OrderStatus:{}, elapsed:{}s",
-                                  m_HPPackServer->m_newConnections.size(), FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, elapsed);
+        FMTLOG(fmtlog::INF, "ServerEngine::HistoryDataReplay History Data Replay End, connections:{}, Replay FutureMarketData:{} "
+                            "StockMarketData:{} EventgLog:{} OrderStatus:{}, elapsed:{}s",
+                m_HPPackServer->m_newConnections.size(), FutureMarketDataCount, StockMarketDataCount, EventgLogCount, OrderStatusCount, elapsed);
         // clear
         m_HPPackServer->m_newConnections.clear();
     }
@@ -1160,7 +1119,7 @@ void ServerEngine::UpdateUserPermissionTable(const Message::PackMessage &msg)
 {
     std::string sql, op;
     Message::TLoginResponse rsp;
-    Utils::gLogger->Log->info("XRiskEngine::ParseUpdateUserPermissionCommand start size:{} {}", m_UserPermissionMap.size(), msg.Command.Command);
+    FMTLOG(fmtlog::INF, "XRiskEngine::ParseUpdateUserPermissionCommand start size:{} {}", m_UserPermissionMap.size(), msg.Command.Command);
     if(ParseUpdateUserPermissionCommand(msg.Command.Command, sql, op, rsp))
     {
         std::string errorString;
@@ -1196,9 +1155,9 @@ void ServerEngine::UpdateUserPermissionTable(const Message::PackMessage &msg)
         }
         else
         {
-            Utils::gLogger->Log->warn("XRiskEngine::ParseUpdateUserPermissionCommand failed:{}", errorString.c_str());
+            FMTLOG(fmtlog::WRN, "XRiskEngine::ParseUpdateUserPermissionCommand failed:{}", errorString);
         }
-        Utils::gLogger->Log->info("XRiskEngine::ParseUpdateUserPermissionCommand end size:{}", m_UserPermissionMap.size());
+        FMTLOG(fmtlog::INF, "XRiskEngine::ParseUpdateUserPermissionCommand end size:{}", m_UserPermissionMap.size());
     }
 }
 
@@ -1265,14 +1224,14 @@ bool ServerEngine::ParseUpdateUserPermissionCommand(const std::string& cmd, std:
             }
         }
         sql = buffer;
-        Utils::gLogger->Log->info("ServerEngine::ParseUpdateUserPermissionCommand successed, UserName:{} Role:{} Plugins:{} Messages:{} MapSize:{}",
-                                  UserName, Role, Plugins, Messages, m_UserPermissionMap.size());
+        FMTLOG(fmtlog::INF, "ServerEngine::ParseUpdateUserPermissionCommand successed, UserName:{} Role:{} Plugins:{} Messages:{} MapSize:{}",
+                UserName, Role, Plugins, Messages, m_UserPermissionMap.size());
     }
     else
     {
         ret = false;
         sprintf(rsp.ErrorMsg, "invalid command: %s", cmd.c_str());
-        Utils::gLogger->Log->warn("ServerEngine::ParseUpdateUserPermissionCommand invalid command, {}", cmd);
+        FMTLOG(fmtlog::WRN, "ServerEngine::ParseUpdateUserPermissionCommand invalid command, {}", cmd);
     }
 
     return ret;
@@ -1282,7 +1241,7 @@ int ServerEngine::sqlite3_callback_UserPermission(void *data, int argc, char **a
 {
     for(int i = 0; i < argc; i++)
     {
-        Utils::gLogger->Log->info("ServerEngine::sqlite3_callback_UserPermission, {} {} = {}", (char*)data, azColName[i], argv[i]);
+        FMTLOG(fmtlog::INF, "ServerEngine::sqlite3_callback_UserPermission, {} {} = {}", (char*)data, azColName[i], argv[i]);
         std::string colName = azColName[i];
         std::string value = argv[i];
         static std::string UserName;
@@ -1334,7 +1293,7 @@ bool ServerEngine::QueryUserPermission()
     bool ret = m_UserDBManager->QueryUserPermission(&ServerEngine::sqlite3_callback_UserPermission, errorString);
     if(!ret)
     {
-        Utils::gLogger->Log->warn("ServerEngine::QueryUserPermission failed, {}", errorString.c_str());
+        FMTLOG(fmtlog::WRN, "ServerEngine::QueryUserPermission failed, {}", errorString);
     }
     else
     {
@@ -1363,7 +1322,7 @@ void ServerEngine::UpdateAppStatusTable()
     static bool ok = false;
     if(!ok && m_CurrentTimeStamp / 1000 == m_AppStatusStoreTime / 1000)
     {
-        Utils::gLogger->Log->info("ServerEngine::UpdateAppStatusTable, App:{}", m_AppStatusMap.size());
+        FMTLOG(fmtlog::INF, "ServerEngine::UpdateAppStatusTable, App:{}", m_AppStatusMap.size());
         std::string errorString;
         m_UserDBManager->UpdateAppStatusTable("DELETE FROM AppStatusTable;", "DELETE", &ServerEngine::sqlite3_callback_AppStatus, errorString);
         for(auto it = m_AppStatusMap.begin(); it != m_AppStatusMap.end(); it++)
@@ -1386,7 +1345,7 @@ int ServerEngine::sqlite3_callback_AppStatus(void *data, int argc, char **argv, 
 {
     for(int i = 0; i < argc; i++)
     {
-        Utils::gLogger->Log->info("ServerEngine::sqlite3_callback_AppStatus, {} {} = {}", (char*)data, azColName[i], argv[i]);
+        FMTLOG(fmtlog::INF, "ServerEngine::sqlite3_callback_AppStatus, {} {} = {}", (char*)data, azColName[i], argv[i]);
         std::string colName = azColName[i];
         std::string value = argv[i];
         static std::string Colo;
@@ -1431,7 +1390,7 @@ void ServerEngine::CheckAppStatus()
     static bool ok = false;
     if(!ok && m_CurrentTimeStamp/1000 == m_AppCheckTime/1000)
     {
-        Utils::gLogger->Log->info("ServerEngine::CheckAppStatus, App:{}", m_AppStatusMap.size());
+        FMTLOG(fmtlog::INF, "ServerEngine::CheckAppStatus, App:{}", m_AppStatusMap.size());
         for(auto it = m_AppStatusMap.begin(); it != m_AppStatusMap.end(); it++)
         {
             if(Utils::equalWith(it->second.Status, "NoStart"))
@@ -1448,7 +1407,7 @@ void ServerEngine::CheckAppStatus()
                 strncpy(message.EventLog.Event, errorString, sizeof(message.EventLog.Event));
                 strncpy(message.EventLog.UpdateTime, Utils::getCurrentTimeUs(), sizeof(message.EventLog.UpdateTime));
                 HandleEventLog(message);
-                Utils::gLogger->Log->warn(errorString);
+                FMTLOG(fmtlog::WRN, "Colo: {} AppName: {} Account: {} NoStart", it->second.Colo, it->second.AppName, it->second.Account);
             }
         }
         ok = true;

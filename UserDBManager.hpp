@@ -3,7 +3,7 @@
 
 #include "Singleton.hpp"
 #include "Util.hpp"
-#include "Logger.h"
+#include "FMTLogger.hpp"
 #include "YMLConfig.hpp"
 #include "SQLiteManager.hpp"
 
@@ -17,7 +17,7 @@ public:
         bool ret = m_DBManager->LoadDataBase(dbPath, errorString);
         if(!ret)
         {
-            Utils::gLogger->Log->warn("UserDBManager::LoadDataBase failed, {}", errorString.c_str());
+            FMTLOG(fmtlog::WRN, "UserDBManager::LoadDataBase failed, {}", errorString);
         }
         return ret;
     }
@@ -30,13 +30,12 @@ public:
         if(!ret)
         {
             sprintf(errorBuffer, "ErrorMsg:%s, SQL:%s", errorString.c_str(), sql.c_str());
-            Utils::gLogger->Log->warn("UserDBManager::UpdateUserPermissionTable failed, ErrorMsg:{} sql:{}",
-                                      errorString.c_str(), sql.c_str());
+            FMTLOG(fmtlog::WRN, "UserDBManager::UpdateUserPermissionTable failed, ErrorMsg:{} SQL:{}", errorString, sql);
         }
         else
         {
             sprintf(errorBuffer, "SQL: %s", sql.c_str());
-            Utils::gLogger->Log->info("UserDBManager::UpdateUserPermissionTable successed, sql:{}", sql.c_str());
+            FMTLOG(fmtlog::INF, "UserDBManager::UpdateUserPermissionTable successed, sql:{}", sql);
         }
         errorString = errorBuffer;
         return ret;
@@ -48,7 +47,7 @@ public:
         bool ret = m_DBManager->Execute(SQL_SELECT_USER_PERMISSION, cb, "SELECT", errorString);
         if(!ret)
         {
-            Utils::gLogger->Log->warn("UserDBManager::Select UserPermissionTable failed, {}", errorString.c_str());
+            FMTLOG(fmtlog::WRN, "UserDBManager::Select UserPermissionTable failed, {}", errorString);
         }
         return ret;
     }
@@ -61,13 +60,12 @@ public:
         if(!ret)
         {
             sprintf(errorBuffer, "ErrorMsg: %s, SQL: %s", errorString.c_str(), sql.c_str());
-            Utils::gLogger->Log->warn("UserDBManager::UpdateAppStatusTable failed, ErrorMsg:{} sql:{}",
-                                      errorString.c_str(), sql.c_str());
+            FMTLOG(fmtlog::WRN, "UserDBManager::UpdateAppStatusTable failed, ErrorMsg:{} sql:{}", errorString, sql);
         }
         else
         {
             sprintf(errorBuffer, "SQL: %s", sql.c_str());
-            Utils::gLogger->Log->info("UserDBManager::UpdateAppStatusTable successed, sql:{}", sql.c_str());
+            FMTLOG(fmtlog::INF, "UserDBManager::UpdateAppStatusTable successed, sql:{}", sql);
         }
         errorString = errorBuffer;
         return ret;
@@ -79,7 +77,7 @@ public:
         bool ret = m_DBManager->Execute(SQL_SELECT_APP_STATUS, cb, "SELECT", errorString);
         if(!ret)
         {
-            Utils::gLogger->Log->warn("UserDBManager::QueryAppStatus failed, {}", errorString.c_str());
+            FMTLOG(fmtlog::WRN, "UserDBManager::QueryAppStatus failed, {}", errorString);
         }
         return ret;
     }

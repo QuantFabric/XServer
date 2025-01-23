@@ -9,7 +9,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unistd.h>
-#include "Logger.h"
+#include "FMTLogger.hpp"
 #include "PackMessage.hpp"
 #include "LockFreeQueue.hpp"
 #include "phmap.h"

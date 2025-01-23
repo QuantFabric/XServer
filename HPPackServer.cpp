@@ -1,6 +1,5 @@
 #include "HPPackServer.h"
 
-extern Utils::Logger *gLogger;
 
 HPPackServer::ConnectionMapT HPPackServer::m_sConnections;
 HPPackServer::ConnectionMapT HPPackServer::m_newConnections;
@@ -38,17 +37,14 @@ HPPackServer::~HPPackServer()
 
 void HPPackServer::Start()
 {
-    char errorString[512] = {0};
     if (::HP_Server_Start(m_pServer, m_ServerIP.c_str(), m_ServerPort))
     {
-        sprintf(errorString, "HPPackServer::Start listen to %s:%d successed", m_ServerIP.c_str(), m_ServerPort);
-        Utils::gLogger->Log->info(errorString);
+        FMTLOG(fmtlog::INF, "HPPackServer::Start listen to {}:{} successed", m_ServerIP, m_ServerPort);
     }
     else
     {
-        sprintf(errorString, "HPPackServer::Start listen to %s:%d failed, error code:%d error massage:%s",
-                m_ServerIP.c_str(), m_ServerPort, ::HP_Client_GetLastError(m_pServer), HP_Client_GetLastErrorDesc(m_pServer));
-        Utils::gLogger->Log->warn(errorString);
+        FMTLOG(fmtlog::WRN, "HPPackServer::Start listen to {}:{} failed, error code:{} error massage:{}",
+                m_ServerIP, m_ServerPort, ::HP_Client_GetLastError(m_pServer), HP_Client_GetLastErrorDesc(m_pServer));
     }
 }
 
@@ -63,10 +59,8 @@ void HPPackServer::SendData(HP_CONNID dwConnID, const unsigned char *pBuffer, in
     bool ret = ::HP_Server_Send(m_pServer, dwConnID, pBuffer, iLength);
     if(!ret)
     {
-        char errorString[512] = {0};
-        sprintf(errorString, "HPPackServer::SendData failed, sys error:%s, error code:%d, error message:%s",
+        FMTLOG(fmtlog::WRN, "HPPackServer::SendData failed, sys error:{}, error code:{}, error message:{}",
                 SYS_GetLastErrorStr(), HP_Client_GetLastError(m_pServer), HP_Client_GetLastErrorDesc(m_pServer));
-        Utils::gLogger->Log->warn(errorString);
     }
 }
 
@@ -88,9 +82,7 @@ En_HP_HandleResult __stdcall HPPackServer::OnAccept(HP_Server pSender, HP_CONNID
         m_sConnections.insert(std::pair<HP_CONNID, Connection>(dwConnID, connection));
     }
     mtx.unlock();
-    char errorString[512] = {0};
-    sprintf(errorString, "HPPackServer::OnAccept accept an new connection dwConnID:%d from %s:%d",  dwConnID, szAddress, usPort);
-    Utils::gLogger->Log->info(errorString);
+    FMTLOG(fmtlog::INF, "HPPackServer::OnAccept accept an new connection dwConnID:{} from {}:{}",  dwConnID, szAddress, usPort);
     return HR_OK;
 }
 
@@ -107,9 +99,7 @@ En_HP_HandleResult __stdcall HPPackServer::OnReceive(HP_Server pSender, HP_CONNI
     ::HP_Server_GetRemoteAddress(pSender, dwConnID, szAddress, &iAddressLen, &usPort);
     Message::PackMessage message;
     memcpy(&message, pData, iLength);
-    char messageType[32] = {0};
-    sprintf(messageType, "0X%X", message.MessageType);
-    Utils::gLogger->Log->debug("HPPackServer::OnReceive receive PackMessage, MessageType:{}", messageType);
+    FMTLOG(fmtlog::DBG, "HPPackServer::OnReceive receive PackMessage, MessageType:{:#X}", message.MessageType);
     // LoginRequest
     if (Message::EMessageType::ELoginRequest == message.MessageType)
     {
@@ -121,10 +111,8 @@ En_HP_HandleResult __stdcall HPPackServer::OnReceive(HP_Server pSender, HP_CONNI
             strncpy(it->second.Account, message.LoginRequest.Account, sizeof(it->second.Account));
             strncpy(it->second.PassWord, message.LoginRequest.PassWord, sizeof(it->second.PassWord));
             strncpy(it->second.UUID, message.LoginRequest.UUID, sizeof(it->second.UUID));
-            char errorString[512] = {0};
-            sprintf(errorString, "HPPackServer::OnReceive accept an new Client login from %s:%d, Account:%s PassWord:%s",
+            FMTLOG(fmtlog::INF, "HPPackServer::OnReceive accept an new Client login from {}:{}, Account:{} PassWord:{}",
                     szAddress, usPort, message.LoginRequest.Account, message.LoginRequest.PassWord);
-            Utils::gLogger->Log->info(errorString);
         }
     }
     while(!m_PackMessageQueue.Push(message));
@@ -148,9 +136,7 @@ En_HP_HandleResult __stdcall HPPackServer::OnClose(HP_Server pSender, HP_CONNID 
     {
         m_newConnections.erase(dwConnID);
     }
-    char errorString[512] = {0};
-    sprintf(errorString, "HPPackServer::OnClose have an connection dwConnID:%d from %s:%d closed",  dwConnID, szAddress, usPort);
-    Utils::gLogger->Log->warn(errorString);
+    FMTLOG(fmtlog::WRN, "HPPackServer::OnClose have an connection dwConnID:{} from {}:{} closed",  dwConnID, szAddress, usPort);
 
     return HR_OK;
 }

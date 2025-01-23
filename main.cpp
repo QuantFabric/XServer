@@ -47,10 +47,8 @@ int main(int argc, char *argv[])
     {
         app_log_path = p;
     }
-    Utils::gLogger = Utils::Singleton<Utils::Logger>::GetInstance();
-    Utils::gLogger->setLogPath(app_log_path, "XServer");
-    Utils::gLogger->Init();
-    Utils::gLogger->setDebugLevel(debug);
+    FMTLog::Logger::Init(app_log_path, "XServer");
+    FMTLog::Logger::SetDebugLevel(debug);
     ServerEngine engine;
     engine.LoadConfig(configPath.c_str());
     engine.Run();
