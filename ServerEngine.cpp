@@ -67,6 +67,16 @@ void ServerEngine::Run()
 
 void ServerEngine::WorkFunc()
 {
+    // 发送EventLog
+    memset(&m_PackMessage, 0, sizeof(m_PackMessage));
+    m_PackMessage.MessageType = Message::EMessageType::EEventLog;
+    m_PackMessage.EventLog.Level = Message::EEventLogLevel::EINFO;
+    strncpy(m_PackMessage.EventLog.App, "XServer", sizeof(m_PackMessage.EventLog.App));
+    fmt::format_to_n(m_PackMessage.EventLog.Event, sizeof(m_PackMessage.EventLog.Event), 
+                    "XServer Start, listen:{}:{}",
+                    m_XServerConfig.ServerIP, m_XServerConfig.Port);
+    strncpy(m_PackMessage.EventLog.UpdateTime, Utils::getCurrentTimeUs(), sizeof(m_PackMessage.EventLog.UpdateTime));
+    HandleEventLog(m_PackMessage);
     // Load Snap Shot
     if(m_XServerConfig.SnapShot)
     {
