@@ -103,7 +103,7 @@ void ServerEngine::WorkFunc()
         memset(&m_PackMessage, 0, sizeof(m_PackMessage));
         while(m_HPPackServer->m_PackMessageQueue.Pop(m_PackMessage))
         {
-            if(m_XServerConfig.SnapShot && IsTrading())
+            if(m_XServerConfig.SnapShot)
             {
                 int retCode = Utils::SnapShotHelper<Message::PackMessage>::WriteData(m_SnapShotPath, m_PackMessage);
                 FMTLOG(fmtlog::DBG, "ServerEngine::SnapShotHelper::WriteData result:{}", retCode);
@@ -329,10 +329,8 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
 
 void ServerEngine::HandleEventLog(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_EventgLogHistoryQueue.push_back(msg);
-    }
+    m_EventgLogHistoryQueue.push_back(msg);
+
     // forward to monitor
     for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
     {
@@ -348,10 +346,7 @@ void ServerEngine::HandleEventLog(const Message::PackMessage &msg)
 
 void ServerEngine::HandleAccountFund(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_AccountFundHistoryQueue.push_back(msg);
-    }
+    m_AccountFundHistoryQueue.push_back(msg);
     std::string Account = msg.AccountFund.Account;
     m_LastAccountFundMap[Account] = msg;
     // forward to monitor
@@ -369,10 +364,7 @@ void ServerEngine::HandleAccountFund(const Message::PackMessage &msg)
 
 void ServerEngine::HandleAccountPosition(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_AccountPositionHistoryQueue.push_back(msg);
-    }
+    m_AccountPositionHistoryQueue.push_back(msg);
     std::string Account = msg.AccountPosition.Account;
     std::string Ticker = msg.AccountPosition.Ticker;
     std::string Key = Account + ":" + Ticker;
@@ -392,10 +384,8 @@ void ServerEngine::HandleAccountPosition(const Message::PackMessage &msg)
 
 void ServerEngine::HandleOrderStatus(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_OrderStatusHistoryQueue.push_back(msg);
-    }
+
+    m_OrderStatusHistoryQueue.push_back(msg);
     // forward to monitor
     for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
     {
@@ -453,10 +443,7 @@ void ServerEngine::HandleActionRequest(const Message::PackMessage &msg)
 
 void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_RiskReportHistoryQueue.push_back(msg);
-    }
+    m_RiskReportHistoryQueue.push_back(msg);
     switch (msg.RiskReport.ReportType)
     {
         case Message::ERiskReportType::ERISK_TICKER_CANCELLED:
@@ -499,10 +486,7 @@ void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
 
 void ServerEngine::HandleColoStatus(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_ColoStatusHistoryQueue.push_back(msg);
-    }
+    m_ColoStatusHistoryQueue.push_back(msg);
     std::string Colo = msg.ColoStatus.Colo;
     m_LastColoStatusMap[Colo] = msg;
     // forward to monitor
@@ -520,10 +504,7 @@ void ServerEngine::HandleColoStatus(const Message::PackMessage &msg)
 
 void ServerEngine::HandleAppStatus(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_AppStatusHistoryQueue.push_back(msg);
-    }
+    m_AppStatusHistoryQueue.push_back(msg);
     std::string Colo = msg.AppStatus.Colo;
     std::string AppName = msg.AppStatus.AppName;
     std::string Account = msg.AppStatus.Account;
@@ -545,10 +526,7 @@ void ServerEngine::HandleAppStatus(const Message::PackMessage &msg)
 
 void ServerEngine::HandleFutureMarketData(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_FutureMarketDataHistoryQueue.push_back(msg);
-    }
+    m_FutureMarketDataHistoryQueue.push_back(msg);
     // update last Future Market Data
     if(msg.FutureMarketData.Tick > -1)
     {
@@ -575,10 +553,7 @@ void ServerEngine::HandleFutureMarketData(const Message::PackMessage &msg)
 
 void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_StockMarketDataHistoryQueue.push_back(msg);
-    }
+    m_StockMarketDataHistoryQueue.push_back(msg);
     // update last Stock Market Data
     if(msg.StockMarketData.Tick > -1)
     {
@@ -599,10 +574,7 @@ void ServerEngine::HandleStockMarketData(const Message::PackMessage &msg)
 
 void ServerEngine::HandleSpotMarketData(const Message::PackMessage &msg)
 {
-    if(IsTrading())
-    {
-        m_SpotMarketDataHistoryQueue.push_back(msg);
-    }
+    m_SpotMarketDataHistoryQueue.push_back(msg);
     // update last Stock Market Data
     if(msg.SpotMarketData.Tick > -1)
     {
