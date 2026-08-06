@@ -87,6 +87,7 @@ private:
     std::unordered_map<std::string, Message::PackMessage> m_LastStockMarketDataMap;// Ticker, StockMarketData
     std::unordered_map<std::string, Message::PackMessage> m_LastSpotMarketDataMap;// Ticker, SpotMarketData
     std::string m_SnapShotPath;
+    std::unordered_map<std::string, Message::PackMessage> m_LastRiskPositionLimitMap;// RiskID + ":" + Account + ":" + "Ticker" + ":" + EngineID
 };
 
 #endif // SERVERENGINE_H

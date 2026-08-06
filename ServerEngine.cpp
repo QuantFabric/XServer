@@ -281,8 +281,9 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
         FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Update UserPermission Table:{}", msg.Command.Command);
     }
     // forward to XWatcher
-    else if(Message::ECommandType::EUPDATE_RISK_LIMIT == msg.Command.CmdType ||
-            Message::ECommandType::EUPDATE_RISK_ACCOUNT_LOCKED == msg.Command.CmdType)
+    else if(Message::ECommandType::EUPDATE_RISK_LIMIT == msg.Command.CmdType 
+            || Message::ECommandType::EUPDATE_RISK_POSITION_LIMIT == msg.Command.CmdType
+            || Message::ECommandType::EUPDATE_RISK_ACCOUNT_LOCKED == msg.Command.CmdType)
     {
         for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
         {
@@ -446,24 +447,32 @@ void ServerEngine::HandleRiskReport(const Message::PackMessage &msg)
     m_RiskReportHistoryQueue.push_back(msg);
     switch (msg.RiskReport.ReportType)
     {
-        case Message::ERiskReportType::ERISK_TICKER_CANCELLED:
+        case Message::ERiskReportType::ERISK_LIMIT:
         {
-            std::string Product = msg.RiskReport.Product;
+            std::string RiskID = msg.RiskReport.RiskID;
+            std::string Account = msg.RiskReport.Account;
             std::string Ticker = msg.RiskReport.Ticker;
-            std::string Key = Product + ":" + Ticker;
-            m_LastTickerCancelRiskReportMap[Key] = msg;
+            std::string key = RiskID + ":" + Account + ":" + Ticker;
+            m_LastRiskLimitRiskReportMap[key] = msg;
+        }
+        break;
+        case Message::ERiskReportType::ERISK_POSITION_LIMIT:
+        {
+            std::string RiskID = msg.RiskReport.RiskID;
+            std::string Account = msg.RiskReport.Account;
+            std::string Ticker = msg.RiskReport.Ticker;
+            std::string EngineID = std::to_string(msg.RiskReport.EngineID);
+            std::string Key = RiskID + ":" + Account + ":" + Ticker + ":" + EngineID;
+            m_LastRiskPositionLimitMap[Key] = msg;
         }
         break;
         case Message::ERiskReportType::ERISK_ACCOUNT_LOCKED:
         {
-            std::string Account = msg.RiskReport.Account;
-            m_LastLockedAccountRiskReportMap[Account] = msg;
-        }
-        break;
-        case Message::ERiskReportType::ERISK_LIMIT:
-        {
             std::string RiskID = msg.RiskReport.RiskID;
-            m_LastRiskLimitRiskReportMap[RiskID] = msg;
+            std::string Account = msg.RiskReport.Account;
+            std::string Ticker = msg.RiskReport.Ticker;
+            std::string Key = RiskID + ":" + Account + ":" + Ticker;
+            m_LastLockedAccountRiskReportMap[Key] = msg;
         }
         break;
         default:
@@ -637,24 +646,32 @@ void ServerEngine::HandleSnapShotMessage(const Message::PackMessage &msg)
         m_RiskReportHistoryQueue.push_back(msg);
         switch (msg.RiskReport.ReportType)
         {
-            case Message::ERiskReportType::ERISK_TICKER_CANCELLED:
+            case Message::ERiskReportType::ERISK_LIMIT:
             {
-                std::string Product = msg.RiskReport.Product;
+                std::string RiskID = msg.RiskReport.RiskID;
+                std::string Account = msg.RiskReport.Account;
                 std::string Ticker = msg.RiskReport.Ticker;
-                std::string Key = Product + ":" + Ticker;
-                m_LastTickerCancelRiskReportMap[Key] = msg;
+                std::string key = RiskID + ":" + Account + ":" + Ticker;
+                m_LastRiskLimitRiskReportMap[key] = msg;
+            }
+            break;
+            case Message::ERiskReportType::ERISK_POSITION_LIMIT:
+            {
+                std::string RiskID = msg.RiskReport.RiskID;
+                std::string Account = msg.RiskReport.Account;
+                std::string Ticker = msg.RiskReport.Ticker;
+                std::string EngineID = std::to_string(msg.RiskReport.EngineID);
+                std::string Key = RiskID + ":" + Account + ":" + Ticker + ":" + EngineID;
+                m_LastRiskPositionLimitMap[Key] = msg;
             }
             break;
             case Message::ERiskReportType::ERISK_ACCOUNT_LOCKED:
             {
-                std::string Account = msg.RiskReport.Account;
-                m_LastLockedAccountRiskReportMap[Account] = msg;
-            }
-            break;
-            case Message::ERiskReportType::ERISK_LIMIT:
-            {
                 std::string RiskID = msg.RiskReport.RiskID;
-                m_LastRiskLimitRiskReportMap[RiskID] = msg;
+                std::string Account = msg.RiskReport.Account;
+                std::string Ticker = msg.RiskReport.Ticker;
+                std::string key = RiskID + ":" + Account + ":" + Ticker;
+                m_LastLockedAccountRiskReportMap[key] = msg;
             }
             break;
         }
@@ -1052,6 +1069,20 @@ void ServerEngine::LastHistoryDataReplay()
         }
     }
     for (auto it1 = m_LastRiskLimitRiskReportMap.begin(); it1 != m_LastRiskLimitRiskReportMap.end(); it1++)
+    {
+        if(m_HPPackServer->m_newConnections.size() == 0)
+            break;
+        for (auto it2 = m_HPPackServer->m_newConnections.begin(); it2 != m_HPPackServer->m_newConnections.end(); ++it2)
+        {
+            std::string Messages = it2->second.Messages;
+            if (Message::EClientType::EXMONITOR == it2->second.ClientType && Messages.find(MESSAGE_RISKREPORT) != std::string::npos)
+            {
+                m_HPPackServer->SendData(it2->second.dwConnID, (const unsigned char *)&(it1->second), sizeof(it1->second));
+            }
+        }
+    }
+
+    for (auto it1 = m_LastRiskPositionLimitMap.begin(); it1 != m_LastRiskPositionLimitMap.end(); it1++)
     {
         if(m_HPPackServer->m_newConnections.size() == 0)
             break;
