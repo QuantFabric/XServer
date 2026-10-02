@@ -278,20 +278,20 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
     {
         // Update UserPermission Table
         UpdateUserPermissionTable(msg);
-        FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Update UserPermission Table:{}", msg.Command.Command);
+        FMTLOG(fmtlog::INF, "ServerEngine::HandleCommand Update UserPermission Table:{}", msg.Command.Command);
     }
     // forward to XWatcher
     else if(Message::ECommandType::EUPDATE_RISK_LIMIT == msg.Command.CmdType 
             || Message::ECommandType::EUPDATE_RISK_POSITION_LIMIT == msg.Command.CmdType
             || Message::ECommandType::EUPDATE_RISK_ACCOUNT_LOCKED == msg.Command.CmdType)
     {
-        for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+        for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
         {
             std::string Colo = it->second.Colo;
             if(Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                FMTLOG(fmtlog::INF, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
                         it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
@@ -305,7 +305,7 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
             if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                FMTLOG(fmtlog::INF, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
                         it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
@@ -321,7 +321,7 @@ void ServerEngine::HandleCommand(const Message::PackMessage &msg)
             if (Message::EClientType::EXWATCHER == it->second.ClientType && Colo == msg.Command.Colo)
             {
                 m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
-                FMTLOG(fmtlog::DBG, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
+                FMTLOG(fmtlog::INF, "ServerEngine::HandleCommand Send Data to Connection:{} Colo:{}, Account:{}, MessgeType:{:#X}",
                         it->second.dwConnID, Colo, it->second.Account, msg.MessageType);
             }
         }
@@ -333,10 +333,10 @@ void ServerEngine::HandleEventLog(const Message::PackMessage &msg)
     m_EventgLogHistoryQueue.push_back(msg);
 
     // forward to monitor
-    for (auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
+    for(auto it = m_HPPackServer->m_sConnections.begin(); it != m_HPPackServer->m_sConnections.end(); ++it)
     {
         std::string Messages = it->second.Messages;
-        if (Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
+        if(Message::EClientType::EXMONITOR == it->second.ClientType && Messages.find(MESSAGE_EVENTLOG) != std::string::npos)
         {
             m_HPPackServer->SendData(it->second.dwConnID, (const unsigned char *)&msg, sizeof(msg));
             FMTLOG(fmtlog::DBG, "ServerEngine::HandleEventLog Send Data to Connection:{} successed, Account:{}, Messages:{}, MessgeType:{:#X}",

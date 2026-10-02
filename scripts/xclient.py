@@ -13,6 +13,9 @@ from HPSocket import TcpPack
 from HPSocket import helper
 import HPSocket.pyhpsocket as HPSocket
 import queue
+import ck_service_client import CKServiceClient
+
+
 recv_queue = queue.Queue()
 
 
@@ -126,11 +129,100 @@ def convert_to_message(data:bytes):
             msg.AccountPosition.StockPosition.ShortDirectRepaid = account_position_data[12]
             msg.AccountPosition.StockPosition.SpecialPositionAvl = account_position_data[13]
             msg.AccountPosition.UpdateTime = struct.unpack("32s", data[168:200])[0].decode('utf-8').strip('\x00')
-
+    elif msg_type == pack_message.EMessageType.ERiskReport:
+        risk_report_format = "B B 16s 16s 16s 16s 20s 16s 16s 32s i i i i i i i i i i i i i i 400s 32s"
+        risk_report_data = struct.unpack(risk_report_format, data[8:646])
+        msg.MessageType = pack_message.EMessageType.ERiskReport
+        msg.RiskReport.ReportType = risk_report_data[0] % 256
+        msg.RiskReport.BusinessType = risk_report_data[1] % 256
+        msg.RiskReport.Colo = risk_report_data[2].decode('utf-8').strip('\x00')
+        msg.RiskReport.Broker = risk_report_data[3].decode('utf-8').strip('\x00')
+        msg.RiskReport.Product = risk_report_data[4].decode('utf-8').strip('\x00')
+        msg.RiskReport.Account = risk_report_data[5].decode('utf-8').strip('\x00')
+        msg.RiskReport.Ticker = rrisk_report_data[6].decode('utf-8').strip('\x00')
+        msg.RiskReport.ExchangeID = risk_report_data[7].decode('utf-8').strip('\x00')
+        msg.RiskReport.RiskID = risk_report_data[8].decode('utf-8').strip('\x00')
+        msg.RiskReport.Trader = risk_report_data[9].decode('utf-8').strip('\x00')
+        msg.RiskReport.FlowLimit = risk_report_data[10]
+        msg.RiskReport.CancelCount = risk_report_data[11]
+        msg.RiskReport.CancelLimit = risk_report_data[12]
+        msg.RiskReport.OrderCount = risk_report_data[13]
+        msg.RiskReport.OrderLimit = risk_report_data[14]
+        msg.RiskReport.OrderCancelLimit = risk_report_data[15]
+        msg.RiskReport.EngineID = risk_report_data[16]
+        msg.RiskReport.LongVolume = risk_report_data[17]
+        msg.RiskReport.ShortVolume = risk_report_data[18]
+        msg.RiskReport.LongLimit = risk_report_data[19]
+        msg.RiskReport.ShortLimit = risk_report_data[20]
+        msg.RiskReport.ExposureLowerLimit = risk_report_data[21]
+        msg.RiskReport.ExposureUpperLimit = risk_report_data[22]
+        msg.RiskReport.LockSide = risk_report_data[23]
+        msg.RiskReport.Event = risk_report_data[24].decode('utf-8').strip('\x00')
+        msg.RiskReport.UpdateTime = risk_report_data[25].decode('utf-8').strip('\x00')
+    elif msg_type == pack_message.EMessageType.EEventLog:
+        event_log_format = "16s 16s 16s 16s 20s 16s 32s 400s i 32s"
+        event_log_data = struct.unpack(event_log_format, data[8:576])
+        msg.MessageType = pack_message.EMessageType.EEventLog
+        msg.EventLog.Colo = event_log_data[0].decode('utf-8').strip('\x00')
+        msg.EventLog.Broker = event_log_data[1].decode('utf-8').strip('\x00')
+        msg.EventLog.Product = event_log_data[2].decode('utf-8').strip('\x00')
+        msg.EventLog.Account = event_log_data[3].decode('utf-8').strip('\x00')
+        msg.EventLog.Ticker = event_log_data[4].decode('utf-8').strip('\x00')
+        msg.EventLog.ExchangeID = event_log_data[5].decode('utf-8').strip('\x00')
+        msg.EventLog.App = event_log_data[6].decode('utf-8').strip('\x00')
+        msg.EventLog.Event = event_log_data[7].decode('utf-8').strip('\x00')
+        msg.EventLog.Level = event_log_data[8]
+        msg.EventLog.UpdateTime = event_log_data[9].decode('utf-8').strip('\x00')
+    elif msg_type == pack_message.EMessageType.EColoStatus:
+        colo_status_format = "16s 32s 32s d d d i d d d d d d d d d d d d d d d 32s"
+        colo_status_data = struct.unpack(colo_status_format, data[8:274])
+        msg.MessageType = pack_message.EMessageType.EColoStatus
+        msg.ColoStatus.Colo = colo_status_data[0].decode('utf-8').strip('\x00')
+        msg.ColoStatus.OSVersion = colo_status_data[1].decode('utf-8').strip('\x00')
+        msg.ColoStatus.KernelVersion = colo_status_data[2].decode('utf-8').strip('\x00')
+        msg.ColoStatus.LoadAverage.Min1 = colo_status_data[3]
+        msg.ColoStatus.LoadAverage.Min5 = colo_status_data[4]
+        msg.ColoStatus.LoadAverage.Min15 = colo_status_data[5]
+        msg.ColoStatus.LoadAverage.CPUS = colo_status_data[6]
+        msg.ColoStatus.CPUUsage.UserRate = colo_status_data[7]
+        msg.ColoStatus.CPUUsage.SysRate = colo_status_data[8]
+        msg.ColoStatus.CPUUsage.IdleRate = colo_status_data[9]
+        msg.ColoStatus.CPUUsage.IOWaitRate = colo_status_data[10]
+        msg.ColoStatus.CPUUsage.IrqRate = colo_status_data[11]
+        msg.ColoStatus.CPUUsage.SoftIrqRate = colo_status_data[12]
+        msg.ColoStatus.CPUUsage.UsedRate = colo_status_data[13]
+        msg.ColoStatus.MemoryInfo.Total = colo_status_data[14]
+        msg.ColoStatus.MemoryInfo.Free = colo_status_data[15]
+        msg.ColoStatus.MemoryInfo.UsedRate = colo_status_data[16]
+        msg.ColoStatus.DiskInfo.Total = colo_status_data[17]
+        msg.ColoStatus.DiskInfo.Free = colo_status_data[18]
+        msg.ColoStatus.DiskInfo.UsedRate = colo_status_data[19]
+        msg.ColoStatus.DiskInfo.Mount1UsedRate = colo_status_data[20]
+        msg.ColoStatus.DiskInfo.Mount2UsedRate = colo_status_data[21]
+        msg.ColoStatus.UpdateTime = colo_status_data[22].decode('utf-8').strip('\x00')
+    elif msg_type == pack_message.EMessageType.EAppStatus:
+        app_status_format = "16s 16s 32s i 16s d d 32s 32s 16s 16s 32s 400s 32s"
+        app_status_data = struct.unpack(app_status_format, data[8:688])
+        msg.MessageType = pack_message.EMessageType.EAppStatus
+        msg.AppStatus.Colo = app_status_data[0].decode('utf-8').strip('\x00')
+        msg.AppStatus.Account = app_status_data[1].decode('utf-8').strip('\x00')
+        msg.AppStatus.AppName = app_status_data[2].decode('utf-8').strip('\x00')
+        msg.AppStatus.PID = app_status_data[3]
+        msg.AppStatus.Status = app_status_data[4].decode('utf-8').strip('\x00')
+        msg.AppStatus.UsedCPURate = app_status_data[5]
+        msg.AppStatus.UsedMemSize = app_status_data[6]
+        msg.AppStatus.StartTime = app_status_data[7].decode('utf-8').strip('\x00')
+        msg.AppStatus.LastStartTime = app_status_data[8].decode('utf-8').strip('\x00')
+        msg.AppStatus.CommitID = app_status_data[9].decode('utf-8').strip('\x00')
+        msg.AppStatus.UtilsCommitID = app_status_data[10].decode('utf-8').strip('\x00')
+        msg.AppStatus.APIVersion = app_status_data[11].decode('utf-8').strip('\x00')
+        msg.AppStatus.StartScript = app_status_data[12].decode('utf-8').strip('\x00')
+        msg.AppStatus.UpdateTime = app_status_data[22].decode('utf-8').strip('\x00')
     return msg
 
 
-def print_msg(msg):
+def convert_to_dict(msg):
+    data = dict()
     if msg.MessageType == pack_message.EMessageType.EFutureMarketData:
         logger.debug("Colo:{} Ticker:{} ExchangeID:{} TradingDay:{} ActionDay:{} UpdateTime:{} MillSec:{} LastPrice:{} "
                      "Volume:{} Turnover:{} OpenPrice:{} ClosePrice:{} PreClosePrice:{} SettlementPrice:{} PreSettlementPrice:{} "
@@ -201,7 +293,44 @@ def print_msg(msg):
                         msg.AccountPosition.StockPosition.ShortPosition, msg.AccountPosition.StockPosition.ShortTdBuy,
                         msg.AccountPosition.StockPosition.ShortTdSell, msg.AccountPosition.StockPosition.ShortDirectRepaid,
                         msg.AccountPosition.StockPosition.SpecialPositionAvl, msg.AccountPosition.UpdateTime)
-
+    elif msg.MessageType == pack_message.EMessageType.ERiskReport:
+        logger.debug("ReportType:{} BusinessType:{} Colo:{} Broker:{} Product:{} Account:{} Ticker:{} ExchangeID:{} "
+                    "RiskID:{} Trader:{} FlowLimit:{} CancelCount:{} CancelLimit:{} OrderCount:{} OrderLimit:{} "
+                    "OrderCancelLimit:{} EngineID:{} LongVolume:{} ShortVolume:{} LongLimit:{} ShortLimit:{} "
+                    "ExposureLowerLimit:{} ExposureUpperLimit:{} LockSide:{} Event:{} UpdateTime:{}", 
+                    msg.RiskReport.ReportType, msg.RiskReport.BusinessType, msg.RiskReport.Colo, msg.RiskReport.Broker, 
+                    msg.RiskReport.Product, msg.RiskReport.Account, msg.RiskReport.Ticker, msg.RiskReport.ExchangeID,
+                    msg.RiskReport.RiskID, msg.RiskReport.Trader, msg.RiskReport.FlowLimit, msg.RiskReport.CancelCount,
+                    msg.RiskReport.CancelLimit, msg.RiskReport.OrderCount, msg.RiskReport.OrderLimit, 
+                    msg.RiskReport.OrderCancelLimit, msg.RiskReport.EngineID, msg.RiskReport.LongVolume, 
+                    msg.RiskReport.ShortVolume, msg.RiskReport.LongLimit, msg.RiskReport.ShortLimit,
+                    msg.RiskReport.ExposureLowerLimit, msg.RiskReport.ExposureUpperLimit, msg.RiskReport.LockSide,
+                    msg.RiskReport.Event, msg.RiskReport.LockSide, msg.RiskReport.UpdateTime)
+    elif msg.MessageType == pack_message.EMessageType.EEventLog:
+        logger.debug("Colo:{} Broker:{} Product:{} Account:{} Ticker:{} ExchangeID:{} App:{} Event:{} Level:{} UpdateTime:{}", 
+                    msg.EventLog.Colo, msg.EventLog.Broker, msg.EventLog.Product, msg.EventLog.Account, msg.EventLog.Ticker, 
+                    msg.EventLog.ExchangeID, msg.EventLog.App, msg.EventLog.Event, msg.EventLog.Level, msg.EventLog.UpdateTime)
+    elif msg.MessageType == pack_message.EMessageType.EColoStatus:
+        logger.debug("Colo:{} OSVersion:{} KernelVersion:{} Min1:{} Min5:{} Min15:{} CPUS:{} "
+                    "UserRate:{} SysRate:{} IdleRate:{} IOWaitRate:{} IrqRate:{} SoftIrqRate:{} UsedRate:{} "
+                    "MemoryInfo.Total:{} MemoryInfo.Free:{} MemoryInfo.UsedRate:{} "
+                    "DiskInfo.Total:{} DiskInfo.Free:{} DiskInfo.UsedRate:{} DiskInfo.Mount1UsedRate:{} DiskInfo.Mount2UsedRate:{} UpdateTime:{}", 
+                    msg.ColoStatus.Colo, msg.ColoStatus.OSVersion, msg.ColoStatus.KernelVersion, msg.ColoStatus.LoadAverage.Min1, 
+                    msg.ColoStatus.LoadAverage.Min5, msg.ColoStatus.LoadAverage.Min15, msg.ColoStatus.LoadAverage.CPUS, 
+                    msg.ColoStatus.CPUUsage.UserRate, msg.ColoStatus.CPUUsage.SysRate, msg.ColoStatus.CPUUsage.IdleRate, 
+                    msg.ColoStatus.CPUUsage.IOWaitRate, msg.ColoStatus.CPUUsage.IrqRate, msg.ColoStatus.CPUUsage.SoftIrqRate,
+                    msg.ColoStatus.CPUUsage.UsedRate, msg.ColoStatus.MemoryInfo.Total,  msg.ColoStatus.MemoryInfo.Free, 
+                    msg.ColoStatus.MemoryInfo.UsedRate, msg.ColoStatus.DiskInfo.Total, msg.ColoStatus.DiskInfo.Free,
+                    msg.ColoStatus.DiskInfo.UsedRate, msg.ColoStatus.DiskInfo.Mount1UsedRate, msg.ColoStatus.DiskInfo.Mount2UsedRate
+                    msg.ColoStatus.UpdateTime)
+    elif msg.MessageType == pack_message.EMessageType.EAppStatus:
+        logger.debug("Colo:{} Broker:{} AppName:{} PID:{} Status:{} UsedCPURate:{} UsedMemSize:{} StartTime:{} LastStartTime:{} "
+                    "CommitID:{} UtilsCommitID:{} APIVersion:{} StartScript:{} UpdateTime:{}", 
+                    msg.AppStatus.Colo, msg.AppStatus.Broker, msg.AppStatus.AppName, msg.AppStatus.PID, msg.AppStatus.Status, 
+                    msg.AppStatus.UsedCPURate, msg.AppStatus.UsedMemSize, msg.AppStatus.StartTime, msg.AppStatus.LastStartTime, 
+                    msg.AppStatus.CommitID, msg.AppStatus.UtilsCommitID, msg.AppStatus.APIVersion, msg.AppStatus.StartScript, 
+                    msg.AppStatus.UpdateTime)
+    return data
 
 
 class HPPackClient(TcpPack.HP_TcpPackClient):
@@ -213,7 +342,9 @@ class HPPackClient(TcpPack.HP_TcpPackClient):
 
     @EventDescription
     def OnConnect(self, Sender, ConnID):
-        logger.info('[%d, OnConnect] Success.' % ConnID)
+        local_ip, local_port = HPSocket.HP_Client_GetLocalAddress(Sender)
+        self.UUID = f"{local_port}"
+        logger.info('[{}, OnConnect] connection:{}:{} Success.', ConnID, local_ip, local_port)
 
     @EventDescription
     def OnReceive(self, Sender, ConnID, Data):
@@ -223,6 +354,10 @@ class HPPackClient(TcpPack.HP_TcpPackClient):
 
     def SendData(self, msg):
         self.Send(self.Client, msg)
+
+    def Login(self, msg):
+        msg.LoginRequest.UUID = self.UUID
+        self.Send(self.Client, msg.to_bytes())
 
 
 def signal_handler(sig, frame):
@@ -235,25 +370,36 @@ def signal_handler(sig, frame):
 
 
 class XServerClient(object):
-    def __init__(self, program_name):
-        self.program_name = program_name
+    def __init__(self, params:dict):
+        self.params = params
+        self.program_name = self.params['program_name']
         self.hp_pack_client = None
         self.ck_client = None
+        self.account = None
 
         self.start_time = int(time.time())
-        self.end_time = 0
-
+        end_time = int(datetime.datetime.strptime(f"{datetime.datetime.now().strftime('%Y-%m-%d')} {self.params['end_time']}", '%Y-%m-%d %H:%M:%S').timestamp())
+        self.end_time = end_time
         self.xserver_info = ""
 
     def connect_to_clickhouse(self, host:str, port:str, user:str, password:str):
-        # self.ck_client = CKFutureClient(host=host, port=port, user=user, password=password)
-        pass
+        self.ck_client = CKServiceClient(host=host, port=port, user=user, password=password)
+        logger.info(f"account:{user} Connect to ClickHouse[{host}:{port}]")
+        self.ck_client.create_order_status_table()
+        self.ck_client.create_account_fund_table()
+        self.ck_client.create_future_position_table()
+        self.ck_client.create_stock_position_table()
+        self.ck_client.create_risk_event_table()
+        self.ck_client.create_event_log_table()
+        self.ck_client.create_colo_status_table()
+        self.ck_client.create_app_status_table()
 
     def connect_to_xserver(self, ip:str, port:int, user:str, password:str):
         # 启动客户端连接XServer
+        self.account = user
         self.hp_pack_client = HPPackClient()
         self.hp_pack_client.Start(host=ip, port=port, head_flag=0x169, size=0XFFFF)
-        logger.info(f"Connect to XServer:{ip}:{port}")
+        logger.info(f"{self.program_name} Connect to XServer:{ip}:{port}")
 
         self.xserver_info = f"{ip}:{port}"
         # 发送登录请求
@@ -262,73 +408,129 @@ class XServerClient(object):
         msg.LoginRequest.ClientType = pack_message.EClientType.EXMONITOR
         msg.LoginRequest.Account = user
         msg.LoginRequest.PassWord = password
-        self.hp_pack_client.SendData(msg.to_bytes())
+        self.hp_pack_client.Login(msg)
 
     def run(self):
         # 注册中断信号
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        self.connect_to_clickhouse(**self.params['ck_params'])
+        self.connect_to_xserver(**self.params['xserver_params'])
 
+        order_status_list = []
+        account_fund_list = []
+        future_position_list = []
+        stock_position_list = []
+        risk_report_list = []
+        event_log_list = []
+        colo_status_list = []
+        app_status_list = []
+        timestamp_sec:int = int(time.time())
         # 主要处理逻辑
         while True:
-            timestamp_sec:int = int(time.time())
             # 收取数据
             data = recv_queue.get()
             if data:
                 msg = convert_to_message(data)
                 if msg.MessageType == pack_message.EMessageType.EOrderStatus:
                     # 更新订单记录
-                    print_msg(msg)
-                    pass
+                    data_dict = convert_to_dict(msg)
+                    order_status_list.append(data_dict)
                 elif msg.MessageType == pack_message.EMessageType.EAccountFund:
                     # 更新账户资金数据
-                    print_msg(msg)
+                    data_dict = convert_to_dict(msg)
+                    account_fund_list.append(data_dict)
                 elif msg.MessageType == pack_message.EMessageType.EAccountPosition:
                     # 更新账户仓位信息
-                    print_msg(msg)
+                    data_dict = convert_to_dict(msg)
+                elif msg.MessageType == pack_message.EMessageType.ERiskReport:
+                    # 更新风控报告
+                    data_dict = convert_to_dict(msg)
+                    risk_report_list.append(data_dict)
+                elif msg.MessageType == pack_message.EMessageType.EEventLog:
+                    # 更新事件日志
+                    data_dict = convert_to_dict(msg)
+                    event_log_list.append(data_dict)
+                elif msg.MessageType == pack_message.EMessageType.EColoStatus:
+                    # 更新Colo状态
+                    data_dict = convert_to_dict(msg)
+                    colo_status_list.append(data_dict)
+                elif msg.MessageType == pack_message.EMessageType.EAppStatus:
+                    # 更新App状态
+                    data_dict = convert_to_dict(msg)
+                    app_status_list.append(data_dict)
                 elif msg.MessageType == pack_message.EMessageType.ELoginResponse:
                     # 发送EventLog
                     new_msg = pack_message.PackMessage()
                     new_msg.MessageType = pack_message.EMessageType.EEventLog
                     new_msg.EventLog.Colo = "XServer"
-                    new_msg.EventLog.Account = self.program_name
+                    new_msg.EventLog.Account = self.account
                     new_msg.EventLog.App = self.program_name
-                    new_msg.EventLog.Event = f"Client Connected to XServer[{self.xserver_info}]"
+                    new_msg.EventLog.Event = f"{self.program_name} Connected to XServer[{self.xserver_info}]"
                     new_msg.EventLog.Level = pack_message.EEventLogLevel.EINFO
                     new_msg.EventLog.UpdateTime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                     self.hp_pack_client.SendData(new_msg.to_bytes())
+                    logger.info(f"{self.program_name} Connected to XServer[{self.xserver_info}]")
 
+            # 每秒写入数据库
+            if int(time.time()) - timestamp_sec >= 1:
+                timestamp_sec = int(time.time())
+                # 执行写入ClickHouse数据库
+                if order_status_list:
+                    self.ck_client.update_order_status_table(data_list=order_status_list)
+                    order_status_list = []
+                if account_fund_list:
+                    self.ck_client.update_account_fund_table(data_list=account_fund_list)
+                    account_fund_list = []
+                if future_position_list:
+                    self.ck_client.update_future_position_table(data_list=future_position_list)
+                    future_position_list = []
+                if stock_position_list:
+                    self.ck_client.update_stock_position_table(data_list=stock_position_list)
+                    stock_position_list = []
+                if risk_report_list:
+                    self.ck_client.update_risk_event_table(data_list=risk_report_list)
+                    risk_report_list = []
+                if event_log_list:
+                    self.ck_client.update_event_log_table(data_list=event_log_list)
+                    event_log_list = []
+                if colo_status_list:
+                    self.ck_client.update_colo_status_table(data_list=colo_status_list)
+                    colo_status_list = []
+                if app_status_list:
+                    self.ck_client.update_app_status_table(data_list=app_status_list)
+                    app_status_list = []
             # 比较时间
-            # if timestamp_sec > self.end_time:
-            #     logger.info(f"当前时间:{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}，已经收盘，退出程序")
-            #     break
+            if timestamp_sec > self.end_time:
+                logger.info(f"当前时间:{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}，已经收盘，退出程序")
+                break
         sys.stdout.flush()
 
 
 if __name__ == "__main__":
     output_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'output')
-    program_name = "QuantClient"
     logger.remove()
     # 输出至标准输出
     logger.add(sys.stdout, level="DEBUG")
     # 输出至日志文件
     logger.add(f"{output_path}/{program_name}_{datetime.datetime.now().strftime('%Y%m%d')}.log", level="DEBUG", rotation="500 MB")
 
-    ck_params = {
-        'host': '192.168.1.168',
-        'port': '9000',
-        'user': 'xtrader',
-        'password': 'xtrader@123.com',
+    params = {
+        'program_name': "XClient",
+        'end_time': "15:30:00",
+        'ck_params': {
+            'host': '192.168.1.168',
+            'port': '9000',
+            'user': 'xtrader',
+            'password': 'xtrader@123.com',
+        },
+        'xserver_params': {
+            'ip': '192.168.1.168',
+            'port': 8000,
+            'user': 'ckclient',
+            'password': '123456',
+        },
     }
 
-    xserver_params = {
-        'ip': '192.168.1.168',
-        'port': 8000,
-        'user': 'ckclient',
-        'password': '123456',
-    }
-    
-    client = XServerClient(program_name=program_name)
-    client.connect_to_clickhouse(**ck_params)
-    client.connect_to_xserver(**xserver_params)
+    client = XServerClient(params)
     client.run()
